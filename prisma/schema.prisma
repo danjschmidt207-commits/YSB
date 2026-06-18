@@ -3,10 +3,11 @@
 // The remaining entities are modeled now so Phases 2–3 (recipes, inventory, starter, ordering)
 // slot in without a migration rewrite.
 //
-// DB note: SQLite here for zero-setup local/ephemeral runs. The spec recommends Postgres
-// (Supabase/Neon) for production — switching is a one-line `datasource` change plus enum
-// re-introduction (SQLite has no native enums, so status/category fields are constrained
-// strings with documented allowed values).
+// DB note: PostgreSQL (spec §4 recommends Supabase/Neon). `DATABASE_URL` is the pooled
+// connection used at runtime; `DATABASE_URL_UNPOOLED` is a direct connection used for
+// schema changes (`prisma db push`). The Vercel↔Neon integration sets both automatically.
+// status/category fields are constrained strings (documented allowed values) rather than
+// native enums, to keep the model easy to evolve.
 
 generator client {
   provider = "prisma-client-js"
@@ -14,8 +15,9 @@ generator client {
 }
 
 datasource db {
-  provider = "sqlite"
-  url      = "file:./dev.db"
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DATABASE_URL_UNPOOLED")
 }
 
 /// A bagel variety. 5 active currently (Everything, Asiago, + 3).
