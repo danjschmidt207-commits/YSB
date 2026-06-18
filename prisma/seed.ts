@@ -11,7 +11,8 @@ import {
   dow,
   isoDate,
   isOpenDay,
-  utcDate,
+  toUtcMidnight,
+  parseIsoDate,
   weekStartWednesday,
   openWeekDates,
 } from "../src/lib/dates.ts";
@@ -19,8 +20,9 @@ import { forecastWeekday, DEFAULT_CONFIG, type DayRecordInput } from "../src/lib
 
 const prisma = new PrismaClient();
 
-// Deterministic "today" for reproducible seeds (matches the build date).
-const SEED_TODAY = utcDate(2026, 6, 18); // Thursday
+// "Today" the sample history is anchored to. Defaults to the real current date so the demo
+// always looks current; APP_TODAY can pin it (used by tests / the original SQLite demo).
+const SEED_TODAY = process.env.APP_TODAY ? parseIsoDate(process.env.APP_TODAY) : toUtcMidnight(new Date());
 const WEEKS_BACK = 12;
 
 const OPEN_TIME = "07:00";
@@ -64,7 +66,15 @@ function seedFromString(s: string): number {
 }
 
 async function main() {
-  console.log("Resetting tables…");
+  // Idempotency guard: never wipe a database that already has data. This lets the seed run
+  // safely on every deploy — it only populates sample data into a fresh, empty database.
+  const existingFlavors = await prisma.flavor.count();
+  if (existingFlavors > 0) {
+    console.log(`Seed skipped — database already has ${existingFlavors} flavors (not overwriting real data).`);
+    return;
+  }
+
+  console.log("Seeding sample data into empty database…");
   // Order matters for FK constraints.
   await prisma.weeklyPlanDayLine.deleteMany();
   await prisma.weeklyPlanDay.deleteMany();
