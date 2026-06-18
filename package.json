@@ -1,0 +1,19 @@
+{
+  "name": "ysb",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Yard Sale Bagels — Operations Dashboard (Phase 1)",
+  "scripts": {
+    "dev": "next dev",
+    "build": "prisma generate && next build",
+    "start": "next start",
+    "lint": "next lint",
+    "db:push": "prisma db push",
+    "db:seed": "tsx prisma/seed.ts",
+    "db:reset": "rm -f prisma/dev.db && prisma db push && tsx prisma/seed.ts",
+    "test": "tsx --test src/lib/forecast.test.ts"
+  },
+  "prisma": {
+    "seed": "tsx prisma/seed.ts"
+  }
+}
