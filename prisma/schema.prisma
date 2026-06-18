@@ -1,0 +1,222 @@
+// Yard Sale Bagels — data model (spec §5).
+// Phase 1 actively uses: Flavor, Format, BakeRecord(+Line), WeeklyPlan(+Day,+Line), AppSetting.
+// The remaining entities are modeled now so Phases 2–3 (recipes, inventory, starter, ordering)
+// slot in without a migration rewrite.
+//
+// DB note: SQLite here for zero-setup local/ephemeral runs. The spec recommends Postgres
+// (Supabase/Neon) for production — switching is a one-line `datasource` change plus enum
+// re-introduction (SQLite has no native enums, so status/category fields are constrained
+// strings with documented allowed values).
+
+generator client {
+  provider = "prisma-client-js"
+  output   = "../node_modules/.prisma/client"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = "file:./dev.db"
+}
+
+/// A bagel variety. 5 active currently (Everything, Asiago, + 3).
+model Flavor {
+  id                     Int      @id @default(autoincrement())
+  name                   String   @unique
+  active                 Boolean  @default(true)
+  displayOrder           Int      @default(0)
+  defaultToppingRecipeId Int?
+
+  bakeLines        BakeRecordLine[]
+  planLines        WeeklyPlanDayLine[]
+  productMappings  ProductMapping[]
+
+  createdAt DateTime @default(now())
+}
+
+/// How a bagel is sold. bagelsPerUnit lets format-level Square sales roll up to bagel counts.
+model Format {
+  id                    Int     @id @default(autoincrement())
+  name                  String  @unique
+  squareCatalogObjectId String?
+  bagelsPerUnit         Int     @default(1)
+  isSammie              Boolean @default(false)
+  displayOrder          Int     @default(0)
+
+  productMappings ProductMapping[]
+}
+
+/// Resolves a Square sale line (variation/modifier) to flavor + format. Spec §8 post-hoc attribution.
+model ProductMapping {
+  id                Int     @id @default(autoincrement())
+  squareVariationId String?
+  squareModifierId  String?
+  flavorId          Int
+  formatId          Int
+
+  flavor Flavor @relation(fields: [flavorId], references: [id])
+  format Format @relation(fields: [formatId], references: [id])
+
+  @@unique([squareVariationId, squareModifierId])
+}
+
+/// One baking day. dayOfWeek: 0=Sun..6=Sat. Times stored as "HH:MM" local.
+model BakeRecord {
+  id              Int      @id @default(autoincrement())
+  date            DateTime @unique
+  dayOfWeek       Int
+  retailOpenTime  String? // "HH:MM"
+  retailCloseTime String? // "HH:MM"
+  totalBaked      Int      @default(0)
+  totalSold       Int      @default(0)
+  soldOut         Boolean  @default(false)
+  soldOutTime     String? // "HH:MM" — when the whole day sold out
+  notes           String?
+
+  lines BakeRecordLine[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+/// Per-flavor detail within a baking day.
+model BakeRecordLine {
+  id                 Int     @id @default(autoincrement())
+  bakeRecordId       Int
+  flavorId           Int
+  qtyBaked           Int     @default(0)
+  qtySold            Int     @default(0)
+  flavorSoldOut      Boolean @default(false)
+  flavorSoldOutTime  String? // "HH:MM"
+
+  bakeRecord BakeRecord @relation(fields: [bakeRecordId], references: [id], onDelete: Cascade)
+  flavor     Flavor     @relation(fields: [flavorId], references: [id])
+
+  @@unique([bakeRecordId, flavorId])
+}
+
+/// A week's production plan. status: "draft" | "locked" | "ordered".
+model WeeklyPlan {
+  id            Int      @id @default(autoincrement())
+  weekStartDate DateTime @unique // Wednesday (week's first open day)
+  status        String   @default("draft")
+  createdBy     String?
+
+  days WeeklyPlanDay[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model WeeklyPlanDay {
+  id               Int      @id @default(autoincrement())
+  weeklyPlanId     Int
+  date             DateTime
+  dayOfWeek        Int
+  plannedTotal     Int      @default(0)
+  recommendedTotal Int      @default(0)
+
+  plan  WeeklyPlan          @relation(fields: [weeklyPlanId], references: [id], onDelete: Cascade)
+  lines WeeklyPlanDayLine[]
+
+  @@unique([weeklyPlanId, date])
+}
+
+model WeeklyPlanDayLine {
+  id              Int @id @default(autoincrement())
+  weeklyPlanDayId Int
+  flavorId        Int
+  plannedQty      Int @default(0)
+  recommendedQty  Int @default(0)
+
+  day    WeeklyPlanDay @relation(fields: [weeklyPlanDayId], references: [id], onDelete: Cascade)
+  flavor Flavor        @relation(fields: [flavorId], references: [id])
+
+  @@unique([weeklyPlanDayId, flavorId])
+}
+
+// ---- Phase 2+ entities (modeled now, not yet surfaced in UI) ----
+
+/// category: dough|topping|sammy|packaging|consumable|spread ; supplier: sysco|house|other
+model Ingredient {
+  id           Int     @id @default(autoincrement())
+  name         String
+  category     String
+  unit         String
+  currentStock Float   @default(0)
+  parLevel     Float   @default(0)
+  reorderPoint Float   @default(0)
+  supplier     String  @default("sysco")
+  packSize     Float?
+  costPerUnit  Float?
+  sku          String?
+
+  recipeComponents RecipeComponent[]
+  orderLines       SyscoOrderLine[]
+}
+
+/// type: dough|topping|spread|sammy|seasoning|starter
+model Recipe {
+  id        Int     @id @default(autoincrement())
+  name      String
+  type      String
+  yieldUnit String?
+  yieldQty  Float?
+  notes     String?
+
+  components    RecipeComponent[] @relation("RecipeOwns")
+  usedAsSubIn   RecipeComponent[] @relation("SubRecipe")
+}
+
+model RecipeComponent {
+  id           Int     @id @default(autoincrement())
+  recipeId     Int
+  ingredientId Int?
+  subRecipeId  Int?
+  quantity     Float
+  unit         String?
+  isBakersPct  Boolean @default(false)
+
+  recipe     Recipe      @relation("RecipeOwns", fields: [recipeId], references: [id], onDelete: Cascade)
+  ingredient Ingredient? @relation(fields: [ingredientId], references: [id])
+  subRecipe  Recipe?     @relation("SubRecipe", fields: [subRecipeId], references: [id])
+}
+
+model StarterLog {
+  id                 Int      @id @default(autoincrement())
+  date               DateTime
+  qtyNeededTomorrow  Float
+  bufferPct          Float    @default(10)
+  qtyToBuild         Float
+  qtyBuilt           Float?
+  notes              String?
+}
+
+model SyscoOrder {
+  id            Int       @id @default(autoincrement())
+  weeklyPlanId  Int
+  submitDueDate DateTime
+  submittedAt   DateTime?
+  status        String    @default("draft")
+
+  lines SyscoOrderLine[]
+}
+
+model SyscoOrderLine {
+  id           Int   @id @default(autoincrement())
+  syscoOrderId Int
+  ingredientId Int
+  qtyNeeded    Float
+  qtyOnHand    Float
+  qtyToOrder   Float
+  packSize     Float?
+  estCost      Float?
+
+  order      SyscoOrder @relation(fields: [syscoOrderId], references: [id], onDelete: Cascade)
+  ingredient Ingredient @relation(fields: [ingredientId], references: [id])
+}
+
+/// Simple key/value config (hours defaults, order deadline day, starter buffer, alert windows…).
+model AppSetting {
+  key   String @id
+  value String
+}
