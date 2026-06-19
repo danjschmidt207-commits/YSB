@@ -1,7 +1,51 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { updateFlavor, updateSetting } from "@/app/actions";
+import { updateFlavor, updateSetting, clearSampleData } from "@/app/actions";
+
+export function ClearDataButton() {
+  const [armed, setArmed] = useState(false);
+  const [pending, start] = useTransition();
+  const [done, setDone] = useState<number | null>(null);
+
+  if (done !== null) {
+    return (
+      <p className="text-sm text-green-700">
+        Cleared {done} bake record{done === 1 ? "" : "s"} plus all plans. You&apos;re starting fresh — enter your real
+        numbers on the Bake and Plan pages.
+      </p>
+    );
+  }
+
+  if (!armed) {
+    return (
+      <button onClick={() => setArmed(true)} className="btn-ghost border-red-300 text-red-700 hover:bg-red-50">
+        Clear sample data
+      </button>
+    );
+  }
+
+  return (
+    <div className="space-y-2">
+      <p className="text-sm font-medium text-red-700">
+        This permanently deletes all bake history and weekly plans. Your flavors, formats, and settings are kept. This
+        cannot be undone.
+      </p>
+      <div className="flex gap-2">
+        <button
+          onClick={() => start(async () => setDone((await clearSampleData()).removed))}
+          disabled={pending}
+          className="btn bg-red-600 text-white hover:bg-red-700"
+        >
+          {pending ? "Clearing…" : "Yes, delete everything"}
+        </button>
+        <button onClick={() => setArmed(false)} disabled={pending} className="btn-ghost">
+          Cancel
+        </button>
+      </div>
+    </div>
+  );
+}
 
 export function FlavorRow({ flavor }: { flavor: { id: number; name: string; active: boolean } }) {
   const [name, setName] = useState(flavor.name);
