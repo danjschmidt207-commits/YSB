@@ -2,26 +2,22 @@
 
 import Link from "next/link";
 import { useState, useTransition } from "react";
-import { generatePlan, savePlanDay, setPlanStatus } from "@/app/actions";
+import { generatePlan, savePlanDayTotal, setPlanStatus, setRotatorName } from "@/app/actions";
+import { splitBagels, type FlavorPct } from "@/lib/calc";
 
-interface LineDto {
-  flavorId: number;
-  name: string;
-  planned: number;
-  recommended: number;
-}
 interface DayDto {
   id: number;
   dateIso: string;
   dow: number;
   dowName: string;
   recommendedTotal: number;
-  lines: LineDto[];
+  plannedTotal: number;
 }
 export interface PlanDto {
   id: number;
   status: "draft" | "locked" | "ordered";
   weekStartIso: string;
+  rotatorName: string;
   days: DayDto[];
 }
 
@@ -29,10 +25,12 @@ export default function WeekPlanner({
   weekStartIso,
   weekLabel,
   plan,
+  flavors,
 }: {
   weekStartIso: string;
   weekLabel: string;
   plan: PlanDto | null;
+  flavors: FlavorPct[];
 }) {
   const [pending, start] = useTransition();
   const locked = plan?.status === "locked" || plan?.status === "ordered";
@@ -41,31 +39,29 @@ export default function WeekPlanner({
     return (
       <div className="card space-y-3 text-center">
         <p className="text-sm text-crust/70">No plan yet for the week of {weekLabel}.</p>
-        <button
-          onClick={() => start(() => generatePlan(weekStartIso).then(() => {}))}
-          disabled={pending}
-          className="btn-primary mx-auto"
-        >
+        <button onClick={() => start(() => generatePlan(weekStartIso).then(() => {}))} disabled={pending} className="btn-primary mx-auto">
           {pending ? "Forecasting…" : "Generate plan from forecaster"}
         </button>
       </div>
     );
   }
 
+  // Display flavors with the rotator's real name substituted.
+  const displayFlavors: FlavorPct[] = flavors.map((f) =>
+    /rotator/i.test(f.name) && plan.rotatorName ? { ...f, name: plan.rotatorName } : f
+  );
+  const weekTotal = plan.days.reduce((s, d) => s + d.plannedTotal, 0);
+
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="flex items-center gap-2">
           <StatusPill status={plan.status} />
-          <span className="text-sm text-crust/60">Week of {weekLabel}</span>
+          <span className="text-sm text-crust/60">Week of {weekLabel} · {weekTotal} bagels</span>
         </div>
         <div className="flex gap-2">
           {!locked && (
-            <button
-              onClick={() => start(() => generatePlan(weekStartIso).then(() => {}))}
-              disabled={pending}
-              className="btn-ghost"
-            >
+            <button onClick={() => start(() => generatePlan(weekStartIso, plan.rotatorName).then(() => {}))} disabled={pending} className="btn-ghost">
               ↻ Re-forecast
             </button>
           )}
@@ -81,31 +77,46 @@ export default function WeekPlanner({
         </div>
       </div>
 
+      <RotatorField planId={plan.id} initial={plan.rotatorName} locked={locked} />
+
       <div className="grid gap-3 sm:grid-cols-2">
         {plan.days.map((d) => (
-          <DayCard key={d.id} day={d} locked={locked} />
+          <DayCard key={d.id} day={d} flavors={displayFlavors} locked={locked} />
         ))}
       </div>
 
       <p className="text-xs text-crust/50">
-        Locking the week feeds the recipe/prep and Sysco-order modules (Phase 2). Both recommended and
-        planned numbers are stored, so forecast accuracy can be measured later (PLN-6).
+        Set each day&apos;s total — flavors split automatically by the percentages in Settings. Lock the week to drive the
+        Prep calculations (dough, starter feeding, schmear).
       </p>
     </div>
   );
 }
 
-function DayCard({ day, locked }: { day: DayDto; locked: boolean }) {
-  const [lines, setLines] = useState<LineDto[]>(day.lines);
+function RotatorField({ planId, initial, locked }: { planId: number; initial: string; locked: boolean }) {
+  const [name, setName] = useState(initial);
   const [pending, start] = useTransition();
-  const [dirty, setDirty] = useState(false);
-  const total = lines.reduce((s, l) => s + (l.planned || 0), 0);
-  const delta = total - day.recommendedTotal;
+  return (
+    <div className="card flex flex-wrap items-center gap-2">
+      <span className="label">This week&apos;s rotator</span>
+      <input
+        value={name}
+        disabled={locked}
+        onChange={(e) => setName(e.target.value)}
+        onBlur={() => name !== initial && start(() => setRotatorName(planId, name).then(() => {}))}
+        placeholder="e.g. Jalapeño Cheddar"
+        className="flex-1 rounded-lg border border-crust/20 px-3 py-1.5 text-sm disabled:bg-crust/5"
+      />
+      {pending && <span className="text-xs text-crust/50">saving…</span>}
+    </div>
+  );
+}
 
-  function set(flavorId: number, v: number) {
-    setDirty(true);
-    setLines((ls) => ls.map((l) => (l.flavorId === flavorId ? { ...l, planned: Math.max(0, v) } : l)));
-  }
+function DayCard({ day, flavors, locked }: { day: DayDto; flavors: FlavorPct[]; locked: boolean }) {
+  const [total, setTotal] = useState(day.plannedTotal);
+  const [pending, start] = useTransition();
+  const split = splitBagels(total, flavors);
+  const delta = total - day.recommendedTotal;
 
   return (
     <div className="card space-y-2">
@@ -116,53 +127,33 @@ function DayCard({ day, locked }: { day: DayDto; locked: boolean }) {
         <span className="text-xs text-crust/50">{day.dateIso.slice(5)}</span>
       </div>
 
-      <div className="space-y-1">
-        {lines.map((l) => (
-          <div key={l.flavorId} className="flex items-center justify-between text-sm">
-            <span className="text-crust/80">{l.name}</span>
-            <div className="flex items-center gap-2">
-              <span className="w-8 text-right text-xs text-crust/40" title="recommended">
-                {l.recommended}
-              </span>
-              <input
-                type="number"
-                inputMode="numeric"
-                disabled={locked}
-                value={l.planned}
-                onChange={(e) => set(l.flavorId, parseInt(e.target.value || "0", 10))}
-                className="h-9 w-16 rounded-lg border border-crust/20 text-center tabular-nums disabled:bg-crust/5"
-              />
-            </div>
+      <div className="flex items-center gap-2">
+        <input
+          type="number"
+          inputMode="numeric"
+          disabled={locked}
+          value={total}
+          onChange={(e) => setTotal(Math.max(0, parseInt(e.target.value || "0", 10)))}
+          onBlur={() => total !== day.plannedTotal && start(() => savePlanDayTotal(day.id, total).then(() => {}))}
+          className="h-11 w-24 rounded-lg border border-crust/20 text-center text-xl font-bold tabular-nums disabled:bg-crust/5"
+        />
+        <div className="text-xs text-crust/50">
+          total bagels
+          <div className={delta === 0 ? "text-crust/40" : delta > 0 ? "text-amber-600" : "text-blue-600"}>
+            {delta === 0 ? "= forecast" : `${delta > 0 ? "+" : ""}${delta} vs ${day.recommendedTotal}`}
+          </div>
+        </div>
+        {pending && <span className="text-xs text-crust/40">…</span>}
+      </div>
+
+      <div className="border-t border-crust/10 pt-1 text-sm">
+        {split.map((s) => (
+          <div key={s.flavorId} className="flex justify-between text-crust/70">
+            <span>{s.name}</span>
+            <span className="tabular-nums">{s.qty}</span>
           </div>
         ))}
       </div>
-
-      <div className="flex items-center justify-between border-t border-crust/10 pt-2">
-        <span className="label">Total</span>
-        <span className="text-lg font-bold tabular-nums">
-          {total}
-          <span className={`ml-2 text-xs font-medium ${delta === 0 ? "text-crust/40" : delta > 0 ? "text-amber-600" : "text-blue-600"}`}>
-            {delta === 0 ? "= rec" : `${delta > 0 ? "+" : ""}${delta} vs rec ${day.recommendedTotal}`}
-          </span>
-        </span>
-      </div>
-
-      {!locked && dirty && (
-        <button
-          onClick={() =>
-            start(() =>
-              savePlanDay(
-                day.id,
-                lines.map((l) => ({ flavorId: l.flavorId, planned: l.planned }))
-              ).then(() => setDirty(false))
-            )
-          }
-          disabled={pending}
-          className="btn-ghost w-full !py-1.5 text-xs"
-        >
-          {pending ? "Saving…" : "Save day"}
-        </button>
-      )}
     </div>
   );
 }

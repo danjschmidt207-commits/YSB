@@ -2,7 +2,6 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getBakeRecord } from "@/lib/queries";
 import { parseIsoDate, shortLabel } from "@/lib/dates";
-import RefreshSalesButton from "../RefreshSalesButton";
 
 export const dynamic = "force-dynamic";
 
@@ -41,7 +40,9 @@ export default async function DayDetail({ params }: { params: { date: string } }
         <Link href="/bake" className="text-sm text-crust/60 underline">
           ← Bake
         </Link>
-        <RefreshSalesButton dateIso={dateIso} />
+        <Link href={`/bake?date=${dateIso}`} className="btn-ghost">
+          Edit
+        </Link>
       </div>
 
       <header>

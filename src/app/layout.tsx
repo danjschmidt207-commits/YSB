@@ -11,6 +11,7 @@ const NAV = [
   { href: "/", label: "Home" },
   { href: "/bake", label: "Bake" },
   { href: "/plan", label: "Plan" },
+  { href: "/prep", label: "Prep" },
   { href: "/settings", label: "Settings" },
 ];
 
@@ -22,7 +23,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           <header className="sticky top-0 z-10 border-b border-crust/10 bg-board/90 backdrop-blur">
             <div className="flex items-center justify-between px-4 py-3">
               <Link href="/" className="flex items-center gap-2">
-                <span className="text-xl">🥟</span>
+                <span className="text-xl">🥯</span>
                 <span className="font-extrabold tracking-tight">Yard Sale Bagels</span>
               </Link>
               <span className="pill bg-crust/10 text-crust/60">Phase 1</span>
