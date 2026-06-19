@@ -1,67 +1,80 @@
 import Link from "next/link";
-import { getActiveFlavors, getBakeRecord, getRecentBakeRecords } from "@/lib/queries";
-import { getSettings } from "@/lib/settings";
+import { getActiveFlavors, getBakeRecord, getRecentBakeRecords, getPlanForWeek } from "@/lib/queries";
+import { getConfig } from "@/lib/serverConfig";
 import { appToday } from "@/lib/today";
-import { isoDate, shortLabel, DOW_SHORT, isOpenDay, dow } from "@/lib/dates";
+import { splitBagels } from "@/lib/calc";
+import { isoDate, shortLabel, DOW_SHORT, parseIsoDate, isOpenDay, dow, weekStartWednesday } from "@/lib/dates";
 import BakeEntryForm from "./BakeEntryForm";
-import RefreshSalesButton from "./RefreshSalesButton";
+import DateNav from "./DateNav";
 
 export const dynamic = "force-dynamic";
 
-export default async function BakePage() {
+export default async function BakePage({ searchParams }: { searchParams: { date?: string } }) {
   const today = appToday();
-  const todayIso = isoDate(today);
-  const [flavors, settings, record, recent] = await Promise.all([
+  const date = searchParams.date ? parseIsoDate(searchParams.date) : today;
+  const dateIso = isoDate(date);
+
+  const [flavors, config, record, recent] = await Promise.all([
     getActiveFlavors(),
-    getSettings(),
-    getBakeRecord(today),
+    getConfig(),
+    getBakeRecord(date),
     getRecentBakeRecords(15),
   ]);
 
+  // Pre-fill baked from the existing record, else from the locked/draft plan's split for that day.
   const bakedMap: Record<number, number> = {};
-  for (const f of flavors) bakedMap[f.id] = 0;
-  if (record) for (const l of record.lines) bakedMap[l.flavorId] = l.qtyBaked;
-
-  const open = isOpenDay(dow(today));
+  const leftoverMap: Record<number, number> = {};
+  for (const f of flavors) {
+    bakedMap[f.id] = 0;
+    leftoverMap[f.id] = 0;
+  }
+  if (record) {
+    for (const l of record.lines) {
+      bakedMap[l.flavorId] = l.qtyBaked;
+      leftoverMap[l.flavorId] = Math.max(0, l.qtyBaked - l.qtySold);
+    }
+  } else {
+    const plan = await getPlanForWeek(weekStartWednesday(date));
+    const planDay = plan?.days.find((d) => isoDate(d.date) === dateIso);
+    if (planDay) {
+      const split = splitBagels(
+        planDay.plannedTotal,
+        flavors.map((f) => ({ flavorId: f.id, name: f.name, pct: f.pct }))
+      );
+      for (const s of split) bakedMap[s.flavorId] = s.qty;
+    }
+  }
 
   return (
     <div className="space-y-6">
-      <header>
-        <h1 className="text-2xl font-extrabold">Daily Bake &amp; Sales</h1>
-        <p className="text-sm text-crust/60">
-          {shortLabel(today)} · {open ? "open day" : "closed day (Mon/Tue)"}
-        </p>
+      <header className="flex flex-wrap items-end justify-between gap-2">
+        <div>
+          <h1 className="text-2xl font-extrabold">Daily Bake</h1>
+          <p className="text-sm text-crust/60">
+            {shortLabel(date)} {dateIso !== isoDate(today) && <span className="pill ml-1 bg-amber-100 text-amber-700">back-fill</span>}
+          </p>
+        </div>
+        <DateNav dateIso={dateIso} />
       </header>
 
       <section className="card space-y-4">
-        <div className="flex items-center justify-between">
-          <h2 className="font-bold">Morning entry — {shortLabel(today)}</h2>
-          {record && <RefreshSalesButton dateIso={todayIso} />}
-        </div>
-        {!open && (
-          <p className="rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-800">
-            You&apos;re closed today, but you can still record or back-fill any date below.
-          </p>
-        )}
+        <p className="text-xs text-crust/50">
+          Enter how many you baked and how many were left at the end of the day. Sold is calculated for you.
+          Use the date picker above to record a past day.
+        </p>
         <BakeEntryForm
-          dateIso={todayIso}
+          dateIso={dateIso}
           flavors={flavors.map((f) => ({ id: f.id, name: f.name }))}
           initial={{
-            openTime: record?.retailOpenTime ?? settings.retailOpenTime,
-            closeTime: record?.retailCloseTime ?? settings.retailCloseTime,
+            openTime: record?.retailOpenTime ?? config.openTime,
+            closeTime: record?.retailCloseTime ?? config.closeTime,
             notes: record?.notes ?? "",
+            soldOut: record?.soldOut ?? false,
+            soldOutTime: record?.soldOutTime ?? "",
             baked: bakedMap,
+            leftover: leftoverMap,
           }}
         />
-        {record && (
-          <p className="text-xs text-crust/50">
-            After saving, pull sales to see sold &amp; sold-out detail on the{" "}
-            <Link href={`/bake/${todayIso}`} className="underline">
-              day page
-            </Link>
-            .
-          </p>
-        )}
       </section>
 
       <section className="space-y-2">
@@ -73,33 +86,26 @@ export default async function BakePage() {
                 <th className="th">Day</th>
                 <th className="th text-right">Baked</th>
                 <th className="th text-right">Sold</th>
-                <th className="th text-right">Sell-through</th>
+                <th className="th text-right">Left</th>
                 <th className="th text-center">Sold out</th>
               </tr>
             </thead>
             <tbody>
-              {recent.map((r) => {
-                const st = r.totalBaked > 0 ? Math.round((r.totalSold / r.totalBaked) * 100) : 0;
-                return (
-                  <tr key={r.id} className="border-t border-crust/5 hover:bg-crust/5">
-                    <td className="td">
-                      <Link href={`/bake/${isoDate(r.date)}`} className="font-semibold underline-offset-2 hover:underline">
-                        {DOW_SHORT[r.dayOfWeek]} {isoDate(r.date).slice(5)}
-                      </Link>
-                    </td>
-                    <td className="td text-right">{r.totalBaked}</td>
-                    <td className="td text-right">{r.totalSold}</td>
-                    <td className="td text-right">{st}%</td>
-                    <td className="td text-center">
-                      {r.soldOut ? (
-                        <span className="pill bg-red-100 text-red-700">out {r.soldOutTime ?? ""}</span>
-                      ) : (
-                        <span className="text-crust/30">—</span>
-                      )}
-                    </td>
-                  </tr>
-                );
-              })}
+              {recent.map((r) => (
+                <tr key={r.id} className="border-t border-crust/5 hover:bg-crust/5">
+                  <td className="td">
+                    <Link href={`/bake?date=${isoDate(r.date)}`} className="font-semibold underline-offset-2 hover:underline">
+                      {DOW_SHORT[r.dayOfWeek]} {isoDate(r.date).slice(5)}
+                    </Link>
+                  </td>
+                  <td className="td text-right">{r.totalBaked}</td>
+                  <td className="td text-right">{r.totalSold}</td>
+                  <td className="td text-right">{r.totalBaked - r.totalSold}</td>
+                  <td className="td text-center">
+                    {r.soldOut ? <span className="pill bg-red-100 text-red-700">out {r.soldOutTime ?? ""}</span> : <span className="text-crust/30">—</span>}
+                  </td>
+                </tr>
+              ))}
             </tbody>
           </table>
         </div>

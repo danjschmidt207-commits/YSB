@@ -20,12 +20,14 @@ datasource db {
   directUrl = env("DATABASE_URL_UNPOOLED")
 }
 
-/// A bagel variety. 5 active currently (Everything, Asiago, + 3).
+/// A bagel variety. 4 permanent + 1 weekly rotator. pct = default share of the daily bake.
 model Flavor {
   id                     Int      @id @default(autoincrement())
   name                   String   @unique
   active                 Boolean  @default(true)
   displayOrder           Int      @default(0)
+  pct                    Float    @default(0)
+  isRotator              Boolean  @default(false)
   defaultToppingRecipeId Int?
 
   bakeLines        BakeRecordLine[]
@@ -101,6 +103,7 @@ model WeeklyPlan {
   id            Int      @id @default(autoincrement())
   weekStartDate DateTime @unique // Wednesday (week's first open day)
   status        String   @default("draft")
+  rotatorName   String? // the week's rotator flavor (e.g. "Jalapeño Cheddar")
   createdBy     String?
 
   days WeeklyPlanDay[]

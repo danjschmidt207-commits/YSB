@@ -3,209 +3,169 @@
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/db";
 import { parseIsoDate, dow, openWeekDates, isoDate } from "@/lib/dates";
-import { pullSoldForDate } from "@/lib/square";
 import { forecastWeekday } from "@/lib/forecast";
 import { getSettings } from "@/lib/settings";
 import { loadWeekdayHistory } from "@/lib/queries";
+import { splitBagels, type FlavorPct } from "@/lib/calc";
+import { applyDefaults, clearTransactional } from "@/lib/seedDefaults";
+import { DEFAULT_FLAVORS } from "@/lib/config";
 
-/** BAKE-1/-5/-6: create or update a day's bake entry (per-flavor baked, hours, notes). */
+async function flavorPcts(): Promise<FlavorPct[]> {
+  const flavors = await prisma.flavor.findMany({ where: { active: true }, orderBy: { displayOrder: "asc" } });
+  return flavors.map((f) => ({ flavorId: f.id, name: f.name, pct: f.pct }));
+}
+
+/**
+ * BAKE: create/update a day's record from manual entry. Per flavor we store baked + leftover
+ * (sold = baked − leftover). Works for any date, so history can be back-filled.
+ */
 export async function saveBake(input: {
   dateIso: string;
   openTime?: string;
   closeTime?: string;
   notes?: string;
-  lines: { flavorId: number; baked: number }[];
+  soldOut?: boolean;
+  soldOutTime?: string;
+  lines: { flavorId: number; baked: number; leftover: number }[];
 }) {
   const date = parseIsoDate(input.dateIso);
-  const totalBaked = input.lines.reduce((s, l) => s + (l.baked || 0), 0);
 
-  const existing = await prisma.bakeRecord.findUnique({ where: { date }, include: { lines: true } });
+  const computed = input.lines.map((l) => {
+    const baked = Math.max(0, l.baked || 0);
+    const leftover = Math.max(0, Math.min(baked, l.leftover || 0));
+    const sold = baked - leftover;
+    const flavorSoldOut = baked > 0 && leftover === 0;
+    return { flavorId: l.flavorId, qtyBaked: baked, qtySold: sold, flavorSoldOut };
+  });
+  const totalBaked = computed.reduce((s, l) => s + l.qtyBaked, 0);
+  const totalSold = computed.reduce((s, l) => s + l.qtySold, 0);
+  const daySoldOut = input.soldOut ?? (totalBaked > 0 && totalSold >= totalBaked);
+  const soldOutTime = daySoldOut ? input.soldOutTime || null : null;
 
-  if (!existing) {
-    await prisma.bakeRecord.create({
-      data: {
-        date,
-        dayOfWeek: dow(date),
-        retailOpenTime: input.openTime || null,
-        retailCloseTime: input.closeTime || null,
-        notes: input.notes || null,
-        totalBaked,
-        totalSold: 0,
-        lines: {
-          create: input.lines.map((l) => ({ flavorId: l.flavorId, qtyBaked: l.baked || 0 })),
-        },
+  const rec = await prisma.bakeRecord.upsert({
+    where: { date },
+    update: {
+      retailOpenTime: input.openTime || null,
+      retailCloseTime: input.closeTime || null,
+      notes: input.notes || null,
+      totalBaked,
+      totalSold,
+      soldOut: daySoldOut,
+      soldOutTime,
+    },
+    create: {
+      date,
+      dayOfWeek: dow(date),
+      retailOpenTime: input.openTime || null,
+      retailCloseTime: input.closeTime || null,
+      notes: input.notes || null,
+      totalBaked,
+      totalSold,
+      soldOut: daySoldOut,
+      soldOutTime,
+    },
+  });
+
+  for (const l of computed) {
+    await prisma.bakeRecordLine.upsert({
+      where: { bakeRecordId_flavorId: { bakeRecordId: rec.id, flavorId: l.flavorId } },
+      update: {
+        qtyBaked: l.qtyBaked,
+        qtySold: l.qtySold,
+        flavorSoldOut: l.flavorSoldOut,
+        flavorSoldOutTime: l.flavorSoldOut ? soldOutTime : null,
+      },
+      create: {
+        bakeRecordId: rec.id,
+        flavorId: l.flavorId,
+        qtyBaked: l.qtyBaked,
+        qtySold: l.qtySold,
+        flavorSoldOut: l.flavorSoldOut,
+        flavorSoldOutTime: l.flavorSoldOut ? soldOutTime : null,
       },
     });
-  } else {
-    await prisma.bakeRecord.update({
-      where: { date },
-      data: {
-        retailOpenTime: input.openTime || null,
-        retailCloseTime: input.closeTime || null,
-        notes: input.notes ?? existing.notes,
-        totalBaked,
-      },
-    });
-    for (const l of input.lines) {
-      await prisma.bakeRecordLine.upsert({
-        where: { bakeRecordId_flavorId: { bakeRecordId: existing.id, flavorId: l.flavorId } },
-        update: { qtyBaked: l.baked || 0 },
-        create: { bakeRecordId: existing.id, flavorId: l.flavorId, qtyBaked: l.baked || 0 },
-      });
-    }
-    await recomputeSoldOut(existing.id);
   }
 
   revalidatePath("/");
   revalidatePath("/bake");
   revalidatePath(`/bake/${input.dateIso}`);
+  return { ok: true };
 }
 
-/** BAKE-2/INT-2: pull sold quantities from Square (mock in Phase 1) and attribute per flavor. */
-export async function refreshSales(dateIso: string) {
-  const date = parseIsoDate(dateIso);
-  const rec = await prisma.bakeRecord.findUnique({ where: { date }, include: { lines: true } });
-  if (!rec) return { ok: false, message: "No bake record for that date yet." };
-
-  const baked = rec.lines.map((l) => ({ flavorId: l.flavorId, baked: l.qtyBaked }));
-  const sales = await pullSoldForDate(dateIso, baked, rec.retailOpenTime ?? "07:00", rec.retailCloseTime ?? "11:00");
-  const byFlavor = new Map(sales.lines.map((l) => [l.flavorId, l]));
-
-  for (const l of rec.lines) {
-    const s = byFlavor.get(l.flavorId);
-    if (!s) continue;
-    const soldOut = s.sold >= l.qtyBaked && l.qtyBaked > 0;
-    await prisma.bakeRecordLine.update({
-      where: { id: l.id },
-      data: {
-        qtySold: s.sold,
-        // BAKE-3: auto-detect sold-out; keep a manually-set time if one already exists.
-        flavorSoldOut: soldOut,
-        flavorSoldOutTime: soldOut ? l.flavorSoldOutTime ?? s.lastSaleTime : null,
-      },
-    });
-  }
-  await recomputeSoldOut(rec.id);
-
-  revalidatePath("/");
-  revalidatePath(`/bake/${dateIso}`);
-  return { ok: true, message: `Pulled sales from ${sales.source === "mock" ? "Square (mock)" : "Square"}.` };
-}
-
-/** BAKE-3: manual sold-out override for a flavor line. */
-export async function setFlavorSoldOut(lineId: number, soldOut: boolean, time?: string) {
-  const line = await prisma.bakeRecordLine.update({
-    where: { id: lineId },
-    data: { flavorSoldOut: soldOut, flavorSoldOutTime: soldOut ? time || null : null },
-    include: { bakeRecord: true },
-  });
-  await recomputeSoldOut(line.bakeRecordId);
-  revalidatePath(`/bake/${isoDate(line.bakeRecord.date)}`);
-}
-
-/** BAKE-3: manual sold-out override for the whole day. */
-export async function setDaySoldOut(dateIso: string, soldOut: boolean, time?: string) {
-  const date = parseIsoDate(dateIso);
-  await prisma.bakeRecord.update({
-    where: { date },
-    data: { soldOut, soldOutTime: soldOut ? time || null : null },
-  });
-  revalidatePath("/");
-  revalidatePath(`/bake/${dateIso}`);
-}
-
-/** Recompute day totals + auto-detected sold-out from the flavor lines (BAKE-3/-4). */
-async function recomputeSoldOut(bakeRecordId: number) {
-  const rec = await prisma.bakeRecord.findUnique({ where: { id: bakeRecordId }, include: { lines: true } });
-  if (!rec) return;
-  const totalBaked = rec.lines.reduce((s, l) => s + l.qtyBaked, 0);
-  const totalSold = rec.lines.reduce((s, l) => s + l.qtySold, 0);
-  const allFlavorsSoldOut = rec.lines.length > 0 && rec.lines.every((l) => l.flavorSoldOut);
-  const daySoldOut = rec.soldOut || allFlavorsSoldOut || (totalBaked > 0 && totalSold >= totalBaked);
-  // Day sold-out time = the latest flavor sell-out time (the day isn't "out" until the last flavor is).
-  const times = rec.lines.filter((l) => l.flavorSoldOut && l.flavorSoldOutTime).map((l) => l.flavorSoldOutTime!);
-  const latest = times.length ? times.sort().at(-1)! : rec.soldOutTime;
-  await prisma.bakeRecord.update({
-    where: { id: bakeRecordId },
-    data: {
-      totalBaked,
-      totalSold,
-      soldOut: daySoldOut,
-      soldOutTime: daySoldOut ? latest : null,
-    },
-  });
-}
-
-/** PLN-2/-3/-5: build (or rebuild) a DRAFT plan for an open week from the forecaster. */
-export async function generatePlan(weekStartIso: string) {
+/** PLN: build/rebuild a DRAFT plan for an open week. Total per day from the forecaster; flavors derive from %. */
+export async function generatePlan(weekStartIso: string, rotatorName?: string) {
   const weekWed = parseIsoDate(weekStartIso);
   const settings = await getSettings();
-  const flavors = await prisma.flavor.findMany({ where: { active: true }, orderBy: { displayOrder: "asc" } });
+  const pcts = await flavorPcts();
 
   const existing = await prisma.weeklyPlan.findUnique({ where: { weekStartDate: weekWed } });
   if (existing && existing.status === "ordered") {
     return { ok: false, message: "This week is already ordered and can't be regenerated." };
   }
-  if (existing) {
-    await prisma.weeklyPlan.delete({ where: { id: existing.id } }); // cascade days/lines
-  }
+  const keepRotator = rotatorName ?? existing?.rotatorName ?? null;
+  if (existing) await prisma.weeklyPlan.delete({ where: { id: existing.id } });
 
   const plan = await prisma.weeklyPlan.create({
-    data: { weekStartDate: weekWed, status: "draft", createdBy: "app" },
+    data: { weekStartDate: weekWed, status: "draft", rotatorName: keepRotator, createdBy: "app" },
   });
 
   for (const date of openWeekDates(weekWed)) {
-    const targetDow = dow(date);
-    const history = await loadWeekdayHistory(targetDow, 8);
+    const history = await loadWeekdayHistory(dow(date), 8);
     const fc = forecastWeekday(history, settings.forecast);
     const planDay = await prisma.weeklyPlanDay.create({
       data: {
         weeklyPlanId: plan.id,
         date,
-        dayOfWeek: targetDow,
+        dayOfWeek: dow(date),
         plannedTotal: fc.recommendedTotal,
         recommendedTotal: fc.recommendedTotal,
       },
     });
-    const byFlavor = new Map(fc.perFlavor.map((p) => [p.flavorId, p]));
-    for (const f of flavors) {
-      const p = byFlavor.get(f.id);
+    for (const s of splitBagels(fc.recommendedTotal, pcts)) {
       await prisma.weeklyPlanDayLine.create({
-        data: {
-          weeklyPlanDayId: planDay.id,
-          flavorId: f.id,
-          plannedQty: p?.recommendedQty ?? 0,
-          recommendedQty: p?.recommendedQty ?? 0,
-        },
+        data: { weeklyPlanDayId: planDay.id, flavorId: s.flavorId, plannedQty: s.qty, recommendedQty: s.qty },
       });
     }
   }
   revalidatePath("/plan");
+  revalidatePath("/prep");
   revalidatePath("/");
-  return { ok: true, message: "Draft plan generated from the forecaster." };
+  return { ok: true, message: "Draft plan generated." };
 }
 
-/** PLN-4: override planned per-flavor quantities for one day; total re-sums. */
-export async function savePlanDay(planDayId: number, lines: { flavorId: number; planned: number }[]) {
-  for (const l of lines) {
+/** PLN: set a day's planned TOTAL; per-flavor split is recomputed from percentages. */
+export async function savePlanDayTotal(planDayId: number, total: number) {
+  const t = Math.max(0, total || 0);
+  const pcts = await flavorPcts();
+  await prisma.weeklyPlanDay.update({ where: { id: planDayId }, data: { plannedTotal: t } });
+  const split = splitBagels(t, pcts);
+  const byFlavor = new Map(split.map((s) => [s.flavorId, s.qty]));
+  for (const [flavorId, qty] of byFlavor) {
     await prisma.weeklyPlanDayLine.updateMany({
-      where: { weeklyPlanDayId: planDayId, flavorId: l.flavorId },
-      data: { plannedQty: Math.max(0, l.planned || 0) },
+      where: { weeklyPlanDayId: planDayId, flavorId },
+      data: { plannedQty: qty },
     });
   }
-  const total = lines.reduce((s, l) => s + Math.max(0, l.planned || 0), 0);
-  await prisma.weeklyPlanDay.update({ where: { id: planDayId }, data: { plannedTotal: total } });
   revalidatePath("/plan");
+  revalidatePath("/prep");
 }
 
-/** PLN-5: lock / unlock a week. Locking feeds the (future) recipe + ordering modules. */
+/** PLN: name this week's rotator flavor. */
+export async function setRotatorName(planId: number, name: string) {
+  await prisma.weeklyPlan.update({ where: { id: planId }, data: { rotatorName: name.trim() || null } });
+  revalidatePath("/plan");
+  revalidatePath("/prep");
+}
+
+/** PLN: lock / unlock a week (locked feeds the prep calculators). */
 export async function setPlanStatus(planId: number, status: "draft" | "locked" | "ordered") {
   await prisma.weeklyPlan.update({ where: { id: planId }, data: { status } });
   revalidatePath("/plan");
+  revalidatePath("/prep");
   revalidatePath("/");
 }
 
-/** CFG: rename / activate a flavor (spec §3 — fill in the 3 TBD flavors here). */
+/** CFG: rename / activate a flavor. */
 export async function updateFlavor(id: number, name: string, active: boolean) {
   await prisma.flavor.update({ where: { id }, data: { name: name.trim() || undefined, active } });
   revalidatePath("/settings");
@@ -213,30 +173,49 @@ export async function updateFlavor(id: number, name: string, active: boolean) {
   revalidatePath("/plan");
 }
 
-/** CFG: update a single app setting (e.g. service level, hours, buffer). */
+/** CFG: set a flavor's default percentage of the daily bake. */
+export async function updateFlavorPct(id: number, pct: number) {
+  await prisma.flavor.update({ where: { id }, data: { pct: Math.max(0, pct || 0) } });
+  revalidatePath("/settings");
+  revalidatePath("/plan");
+  revalidatePath("/prep");
+}
+
+/** CFG: update a single app setting (raw string/JSON value). */
 export async function updateSetting(key: string, value: string) {
   await prisma.appSetting.upsert({ where: { key }, update: { value }, create: { key, value } });
   revalidatePath("/settings");
   revalidatePath("/");
   revalidatePath("/plan");
+  revalidatePath("/prep");
 }
 
-/**
- * CFG: clear all bake history and weekly plans so the owner can start fresh with real data.
- * Keeps configuration (flavors, formats, Square mappings, settings) so nothing has to be
- * re-set up. Returns how many bake records were removed.
- */
+/** CFG: clear bake history + plans, keep configuration. */
 export async function clearSampleData() {
   const removed = await prisma.bakeRecord.count();
-  await prisma.weeklyPlanDayLine.deleteMany();
-  await prisma.weeklyPlanDay.deleteMany();
-  await prisma.weeklyPlan.deleteMany();
-  await prisma.bakeRecordLine.deleteMany();
-  await prisma.bakeRecord.deleteMany();
-  await prisma.starterLog.deleteMany();
+  await clearTransactional(prisma);
   revalidatePath("/");
   revalidatePath("/bake");
   revalidatePath("/plan");
-  revalidatePath("/settings");
+  revalidatePath("/prep");
   return { removed };
+}
+
+/**
+ * CFG: reset flavors, formats, and settings to the current app defaults (4 permanent + rotator,
+ * 8–13 hours, dough/starter/schmear recipes). Also clears bake history + plans. Use this once to
+ * migrate an older database to the new model.
+ */
+export async function resetToDefaults() {
+  await clearTransactional(prisma);
+  // Remove flavors that aren't part of the default set (now safe — no bake lines reference them).
+  const keep = DEFAULT_FLAVORS.map((f) => f.name);
+  await prisma.flavor.deleteMany({ where: { name: { notIn: keep } } });
+  await applyDefaults(prisma);
+  revalidatePath("/");
+  revalidatePath("/bake");
+  revalidatePath("/plan");
+  revalidatePath("/prep");
+  revalidatePath("/settings");
+  return { ok: true };
 }
