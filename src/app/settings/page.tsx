@@ -2,7 +2,7 @@ import { prisma } from "@/lib/db";
 import { getSettings } from "@/lib/settings";
 import { isSquareConfigured } from "@/lib/square";
 import { DOW_NAMES } from "@/lib/dates";
-import { FlavorRow, NumberSetting } from "./SettingsClient";
+import { FlavorRow, NumberSetting, ClearDataButton } from "./SettingsClient";
 
 export const dynamic = "force-dynamic";
 
@@ -99,6 +99,16 @@ export default async function SettingsPage() {
             </div>
           ))}
         </div>
+      </section>
+
+      <section className="card border-red-200">
+        <h2 className="mb-1 font-bold text-red-700">Start fresh</h2>
+        <p className="mb-3 text-sm text-crust/60">
+          The app ships with sample bake history so you can see how it works. When you&apos;re ready to track your real
+          bakery, clear it here. Your flavors, formats, and settings stay — only the sample bake history and plans are
+          removed.
+        </p>
+        <ClearDataButton />
       </section>
     </div>
   );

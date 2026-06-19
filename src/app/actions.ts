@@ -220,3 +220,23 @@ export async function updateSetting(key: string, value: string) {
   revalidatePath("/");
   revalidatePath("/plan");
 }
+
+/**
+ * CFG: clear all bake history and weekly plans so the owner can start fresh with real data.
+ * Keeps configuration (flavors, formats, Square mappings, settings) so nothing has to be
+ * re-set up. Returns how many bake records were removed.
+ */
+export async function clearSampleData() {
+  const removed = await prisma.bakeRecord.count();
+  await prisma.weeklyPlanDayLine.deleteMany();
+  await prisma.weeklyPlanDay.deleteMany();
+  await prisma.weeklyPlan.deleteMany();
+  await prisma.bakeRecordLine.deleteMany();
+  await prisma.bakeRecord.deleteMany();
+  await prisma.starterLog.deleteMany();
+  revalidatePath("/");
+  revalidatePath("/bake");
+  revalidatePath("/plan");
+  revalidatePath("/settings");
+  return { removed };
+}
