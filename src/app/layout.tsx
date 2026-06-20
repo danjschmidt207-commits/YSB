@@ -4,7 +4,7 @@ import "./globals.css";
 
 export const metadata: Metadata = {
   title: "Yard Sale Bagels — Ops",
-  description: "Right-size the daily bake. Phase 1: track, forecast, plan.",
+  description: "Plan the week, calculate prep, order ingredients.",
 };
 
 const NAV = [
@@ -12,6 +12,9 @@ const NAV = [
   { href: "/bake", label: "Bake" },
   { href: "/plan", label: "Plan" },
   { href: "/prep", label: "Prep" },
+  { href: "/inventory", label: "Inventory" },
+  { href: "/order", label: "Order" },
+  { href: "/reports", label: "Reports" },
   { href: "/settings", label: "Settings" },
 ];
 
@@ -28,7 +31,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
               </Link>
               <span className="pill bg-crust/10 text-crust/60">Phase 1</span>
             </div>
-            <nav className="flex gap-1 px-2 pb-2">
+            <nav className="flex flex-wrap gap-1 px-2 pb-2">
               {NAV.map((n) => (
                 <Link
                   key={n.href}
@@ -42,7 +45,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           </header>
           <main className="flex-1 px-4 py-5">{children}</main>
           <footer className="px-4 py-6 text-center text-xs text-crust/40">
-            Yard Sale Bagels Ops · de-censored demand forecasting · mock Square data
+            Yard Sale Bagels Ops · plan · prep · order
           </footer>
         </div>
       </body>

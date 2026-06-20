@@ -60,6 +60,10 @@ export async function getRecentBakeRecords(limit = 20) {
   });
 }
 
+export async function getIngredients() {
+  return prisma.ingredient.findMany({ orderBy: [{ category: "asc" }, { name: "asc" }] });
+}
+
 export async function getPlanForWeek(weekStartDate: Date) {
   return prisma.weeklyPlan.findUnique({
     where: { weekStartDate },
