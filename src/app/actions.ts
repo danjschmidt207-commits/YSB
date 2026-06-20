@@ -225,7 +225,9 @@ export async function clearSampleData() {
  */
 export async function resetToDefaults() {
   await clearTransactional(prisma);
-  // Remove flavors that aren't part of the default set (now safe — no bake lines reference them).
+  // Drop legacy Square product mappings (unused now) so old flavors can be removed.
+  await prisma.productMapping.deleteMany();
+  // Remove flavors that aren't part of the default set (now safe — nothing references them).
   const keep = DEFAULT_FLAVORS.map((f) => f.name);
   await prisma.flavor.deleteMany({ where: { name: { notIn: keep } } });
   await applyDefaults(prisma);
