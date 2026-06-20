@@ -120,6 +120,44 @@ export function weeklySchmear(weeklyBagels: number, cfg: SchmearConfig): Schmear
   };
 }
 
+// ---- ordering: weekly ingredient demand + unit conversion ----
+
+export const UNIT_GRAMS: Record<string, number> = { g: 1, kg: 1000, oz: OZ, lb: LB };
+
+/** Grams in one of the ingredient's stock units (weight units only; null for counts like "ea"). */
+export function unitGrams(unit: string): number | null {
+  return UNIT_GRAMS[unit] ?? null;
+}
+
+/**
+ * Total weekly ingredient demand in grams, keyed by lowercased ingredient name. Combines dough
+ * (flour incl. starter-feed flour, honey, salt) and schmear components across the week.
+ */
+export function weeklyDemandGrams(
+  bagelsPerDay: number[],
+  dough: DoughRecipe,
+  starter: StarterConfig,
+  schmear: SchmearConfig
+): Record<string, number> {
+  const demand: Record<string, number> = {};
+  const add = (name: string, grams: number) => {
+    const k = name.trim().toLowerCase();
+    demand[k] = (demand[k] ?? 0) + grams;
+  };
+  let weekly = 0;
+  for (const b of bagelsPerDay) {
+    const d = doughForBagels(b, dough);
+    const s = starterForBagels(b, dough, starter);
+    add("flour", d.flourG + s.flourG);
+    add("honey", d.honeyG);
+    add("salt", d.saltG);
+    weekly += b;
+  }
+  const sch = weeklySchmear(weekly, schmear);
+  for (const t of sch.types) for (const c of t.components) add(c.name, c.grams);
+  return demand;
+}
+
 // ---- formatting helpers ----
 
 export function g(grams: number): string {

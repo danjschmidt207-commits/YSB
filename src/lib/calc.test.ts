@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { splitBagels, doughForBagels, starterForBagels, weeklySchmear } from "./calc.ts";
+import { splitBagels, doughForBagels, starterForBagels, weeklySchmear, weeklyDemandGrams, unitGrams } from "./calc.ts";
 import { DEFAULT_DOUGH, DEFAULT_STARTER, DEFAULT_SCHMEAR, LB } from "./config.ts";
 
 const FLAVORS = [
@@ -62,4 +62,20 @@ test("plain schmear (cream cheese only) is 100% cream cheese", () => {
   const r = weeklySchmear(1000, DEFAULT_SCHMEAR);
   const plain = r.types.find((t) => t.key === "plain")!;
   assert.ok(Math.abs(plain.creamCheeseG - plain.schmearOz * 28.349523) < 1e-3);
+});
+
+test("weeklyDemandGrams aggregates dough + schmear by name, with salt from both", () => {
+  const d = weeklyDemandGrams([100, 100], DEFAULT_DOUGH, DEFAULT_STARTER, DEFAULT_SCHMEAR);
+  // flour demand = dough flour + starter feed flour for 200 bagels, > 0
+  assert.ok(d["flour"] > 0);
+  assert.ok(d["cream cheese"] > 0);
+  // salt appears in dough AND schmear, so combined salt >= dough-only salt
+  const doughSalt = doughForBagels(200, DEFAULT_DOUGH).saltG;
+  assert.ok(d["salt"] >= doughSalt);
+});
+
+test("unitGrams converts weights and returns null for counts", () => {
+  assert.equal(unitGrams("g"), 1);
+  assert.ok(Math.abs(unitGrams("lb")! - 453.59237) < 1e-6);
+  assert.equal(unitGrams("ea"), null);
 });
