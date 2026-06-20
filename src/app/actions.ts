@@ -190,6 +190,23 @@ export async function updateSetting(key: string, value: string) {
   revalidatePath("/prep");
 }
 
+/** INV: update an ingredient's stock count and ordering fields. */
+export async function updateIngredient(
+  id: number,
+  data: { currentStock?: number; parLevel?: number; reorderPoint?: number; costPerUnit?: number; packSize?: number; supplier?: string }
+) {
+  const clean: Record<string, number | string> = {};
+  if (data.currentStock != null) clean.currentStock = Math.max(0, data.currentStock);
+  if (data.parLevel != null) clean.parLevel = Math.max(0, data.parLevel);
+  if (data.reorderPoint != null) clean.reorderPoint = Math.max(0, data.reorderPoint);
+  if (data.costPerUnit != null) clean.costPerUnit = Math.max(0, data.costPerUnit);
+  if (data.packSize != null) clean.packSize = Math.max(0, data.packSize);
+  if (data.supplier) clean.supplier = data.supplier;
+  await prisma.ingredient.update({ where: { id }, data: clean });
+  revalidatePath("/inventory");
+  revalidatePath("/order");
+}
+
 /** CFG: clear bake history + plans, keep configuration. */
 export async function clearSampleData() {
   const removed = await prisma.bakeRecord.count();

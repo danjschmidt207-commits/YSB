@@ -144,7 +144,7 @@ model WeeklyPlanDayLine {
 /// category: dough|topping|sammy|packaging|consumable|spread ; supplier: sysco|house|other
 model Ingredient {
   id           Int     @id @default(autoincrement())
-  name         String
+  name         String  @unique
   category     String
   unit         String
   currentStock Float   @default(0)
