@@ -108,6 +108,20 @@ export const DEFAULT_SCHMEAR: SchmearConfig = {
         { name: "Pepper", grams: 10 },
       ],
     },
+    {
+      key: "butter",
+      name: "Butter",
+      pct: 0,
+      // Butter is a non-cream-cheese spread; contributes 0 to the cream-cheese order.
+      components: [{ name: "Butter", grams: 36 * LB }],
+    },
+    {
+      key: "schmear_rotator",
+      name: "Rotator Schmear",
+      pct: 0,
+      // The week's rotating schmear. Default to a cream-cheese base; edit per week in Settings.
+      components: [{ name: "Cream cheese", grams: 36 * LB }],
+    },
   ],
 };
 

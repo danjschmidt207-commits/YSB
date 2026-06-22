@@ -30,3 +30,15 @@ test("ignored modifier is skipped; unknown surfaces as unmapped", () => {
   assert.equal(r.flavorId, null);
   assert.deepEqual(r.unmapped, ["Sesame"]);
 });
+
+test("schmear override maps a modifier (Butter) to a schmear key", () => {
+  const c = buildContext(
+    [{ id: 1, name: "Everything" }],
+    [{ key: "butter", name: "Butter" }],
+    { butter: "schmear:butter" }
+  );
+  const r = attributeLine(["Everything", "Butter"], c);
+  assert.equal(r.flavorId, 1);
+  assert.equal(r.schmearKey, "butter");
+  assert.deepEqual(r.unmapped, []);
+});

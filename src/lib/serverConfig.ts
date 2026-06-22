@@ -18,6 +18,19 @@ function mergeJson<T>(raw: string | undefined, fallback: T): T {
   }
 }
 
+/** Keep the operator's stored schmear types/edits, but add any new default types (e.g. Butter, Rotator). */
+function mergeSchmear(raw: string | undefined): SchmearConfig {
+  if (!raw) return DEFAULT_SCHMEAR;
+  try {
+    const stored = JSON.parse(raw) as SchmearConfig;
+    const keys = new Set(stored.types.map((t) => t.key));
+    const missing = DEFAULT_SCHMEAR.types.filter((t) => !keys.has(t.key));
+    return { ...stored, types: [...stored.types, ...missing] };
+  } catch {
+    return DEFAULT_SCHMEAR;
+  }
+}
+
 export async function getConfig(): Promise<AppConfig> {
   const rows = await prisma.appSetting.findMany();
   const m = new Map(rows.map((r) => [r.key, r.value]));
@@ -28,6 +41,6 @@ export async function getConfig(): Promise<AppConfig> {
     alertWindowDays: m.has("order_alert_window_days") ? Number(m.get("order_alert_window_days")) : DEFAULT_CONFIG.alertWindowDays,
     dough: mergeJson(m.get("dough_recipe"), DEFAULT_DOUGH),
     starter: mergeJson(m.get("starter_feed"), DEFAULT_STARTER),
-    schmear: m.has("schmear_config") ? (JSON.parse(m.get("schmear_config")!) as SchmearConfig) : DEFAULT_SCHMEAR,
+    schmear: mergeSchmear(m.get("schmear_config")),
   };
 }
