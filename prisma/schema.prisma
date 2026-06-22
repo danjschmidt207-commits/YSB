@@ -225,3 +225,21 @@ model AppSetting {
   key   String @id
   value String
 }
+
+/// Imported Square sale lines (one bagel/schmear line). flavorId/schmearKey are attributed at
+/// import via modifier mapping. Kept separate from manual BakeRecords; powers the Insights page.
+model SquareSale {
+  id         Int      @id @default(autoincrement())
+  uid        String   @unique // orderId:lineUid — dedupes re-imports
+  soldAt     DateTime
+  date       DateTime // UTC-midnight calendar day, for weekday grouping
+  dayOfWeek  Int
+  flavorId   Int?
+  schmearKey String?
+  itemName   String
+  qty        Int      @default(1)
+
+  createdAt DateTime @default(now())
+
+  @@index([date])
+}

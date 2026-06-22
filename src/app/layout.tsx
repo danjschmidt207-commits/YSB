@@ -4,7 +4,7 @@ import "./globals.css";
 
 export const metadata: Metadata = {
   title: "Yard Sale Bagels — Ops",
-  description: "Plan the week, calculate prep, order ingredients.",
+  description: "Plan the week, calculate prep, order ingredients, and learn from your sales.",
 };
 
 const NAV = [
@@ -15,6 +15,7 @@ const NAV = [
   { href: "/inventory", label: "Inventory" },
   { href: "/order", label: "Order" },
   { href: "/reports", label: "Reports" },
+  { href: "/insights", label: "Insights" },
   { href: "/settings", label: "Settings" },
 ];
 
@@ -45,7 +46,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           </header>
           <main className="flex-1 px-4 py-5">{children}</main>
           <footer className="px-4 py-6 text-center text-xs text-crust/40">
-            Yard Sale Bagels Ops · plan · prep · order
+            Yard Sale Bagels Ops · plan · prep · order · insights
           </footer>
         </div>
       </body>
