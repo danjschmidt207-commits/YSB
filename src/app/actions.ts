@@ -241,6 +241,8 @@ export async function importSquareSales(fromIso: string, toIso: string) {
   for (const line of lines) {
     const att = attributeLine(line.modifierNames, ctx);
     att.unmapped.forEach((u) => unmapped.add(u));
+    // Skip lines that aren't a bagel or schmear (e.g. coffee) so the data stays clean.
+    if (att.flavorId == null && att.schmearKey == null) continue;
     const date = parseIsoDate(line.soldAt.slice(0, 10));
     await prisma.squareSale.upsert({
       where: { uid: line.uid },
@@ -270,17 +272,32 @@ export async function importSquareSales(fromIso: string, toIso: string) {
   return { ok: true, source, imported, unmapped: [...unmapped] };
 }
 
-/** SQUARE: map an unmatched modifier name to a flavor (or ignore it), then it applies on re-import. */
-export async function setSquareOverride(name: string, value: number | "ignore") {
+/**
+ * SQUARE: map an unmatched modifier to a target, applied on re-import. Value is a flavorId
+ * (number), a "schmear:<key>" string, or "ignore".
+ */
+export async function setSquareOverride(name: string, value: number | string) {
+  await mergeOverrides({ [name]: value === "ignore" ? IGNORE : value });
+  revalidatePath("/settings");
+}
+
+/** SQUARE: ignore a batch of modifiers in one go (e.g. the coffee options). */
+export async function ignoreSquareModifiers(names: string[]) {
+  const patch: Record<string, string> = {};
+  for (const n of names) patch[n] = IGNORE;
+  await mergeOverrides(patch);
+  revalidatePath("/settings");
+}
+
+async function mergeOverrides(patch: Record<string, number | string>) {
   const row = await prisma.appSetting.findUnique({ where: { key: "square_overrides" } });
   const map = row ? (JSON.parse(row.value) as Record<string, number | string>) : {};
-  map[name] = value === "ignore" ? IGNORE : value;
+  Object.assign(map, patch);
   await prisma.appSetting.upsert({
     where: { key: "square_overrides" },
     update: { value: JSON.stringify(map) },
     create: { key: "square_overrides", value: JSON.stringify(map) },
   });
-  revalidatePath("/settings");
 }
 
 /** INSIGHTS: set each flavor's % from the imported Square flavor mix. */
