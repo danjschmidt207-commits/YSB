@@ -9,6 +9,20 @@ import { loadWeekdayHistory } from "@/lib/queries";
 import { splitBagels, type FlavorPct } from "@/lib/calc";
 import { applyDefaults, clearTransactional } from "@/lib/seedDefaults";
 import { DEFAULT_FLAVORS } from "@/lib/config";
+import { getConfig } from "@/lib/serverConfig";
+import { fetchSquareSales } from "@/lib/square";
+import { buildContext, attributeLine, IGNORE } from "@/lib/attribute";
+
+/** Round shares (summing ~1) to integer percentages that total exactly 100 (largest remainder). */
+function toPct100(shares: { id: number | string; share: number }[]): Map<number | string, number> {
+  const raw = shares.map((s) => ({ id: s.id, exact: s.share * 100 }));
+  const floored = raw.map((r) => ({ id: r.id, base: Math.floor(r.exact), rem: r.exact - Math.floor(r.exact) }));
+  let leftover = 100 - floored.reduce((s, r) => s + r.base, 0);
+  const order = [...floored].sort((a, b) => b.rem - a.rem);
+  const bump = new Set<number | string>();
+  for (let i = 0; i < leftover && i < order.length; i++) bump.add(order[i].id);
+  return new Map(floored.map((r) => [r.id, r.base + (bump.has(r.id) ? 1 : 0)]));
+}
 
 async function flavorPcts(): Promise<FlavorPct[]> {
   const flavors = await prisma.flavor.findMany({ where: { active: true }, orderBy: { displayOrder: "asc" } });
@@ -205,6 +219,111 @@ export async function updateIngredient(
   await prisma.ingredient.update({ where: { id }, data: clean });
   revalidatePath("/inventory");
   revalidatePath("/order");
+}
+
+/** SQUARE: import completed sales for a date range and attribute each line to a flavor/schmear. */
+export async function importSquareSales(fromIso: string, toIso: string) {
+  const { source, lines } = await fetchSquareSales(fromIso, toIso);
+  const [flavors, config, overrideRow] = await Promise.all([
+    prisma.flavor.findMany({ where: { active: true } }),
+    getConfig(),
+    prisma.appSetting.findUnique({ where: { key: "square_overrides" } }),
+  ]);
+  const overrides = overrideRow ? (JSON.parse(overrideRow.value) as Record<string, number | string>) : {};
+  const ctx = buildContext(
+    flavors.map((f) => ({ id: f.id, name: f.name })),
+    config.schmear.types.map((t) => ({ key: t.key, name: t.name })),
+    overrides
+  );
+
+  const unmapped = new Set<string>();
+  let imported = 0;
+  for (const line of lines) {
+    const att = attributeLine(line.modifierNames, ctx);
+    att.unmapped.forEach((u) => unmapped.add(u));
+    const date = parseIsoDate(line.soldAt.slice(0, 10));
+    await prisma.squareSale.upsert({
+      where: { uid: line.uid },
+      update: { flavorId: att.flavorId, schmearKey: att.schmearKey },
+      create: {
+        uid: line.uid,
+        soldAt: new Date(line.soldAt),
+        date,
+        dayOfWeek: dow(date),
+        flavorId: att.flavorId,
+        schmearKey: att.schmearKey,
+        itemName: line.itemName,
+        qty: line.qty,
+      },
+    });
+    imported++;
+  }
+
+  await prisma.appSetting.upsert({
+    where: { key: "square_unmapped" },
+    update: { value: JSON.stringify([...unmapped]) },
+    create: { key: "square_unmapped", value: JSON.stringify([...unmapped]) },
+  });
+
+  revalidatePath("/insights");
+  revalidatePath("/settings");
+  return { ok: true, source, imported, unmapped: [...unmapped] };
+}
+
+/** SQUARE: map an unmatched modifier name to a flavor (or ignore it), then it applies on re-import. */
+export async function setSquareOverride(name: string, value: number | "ignore") {
+  const row = await prisma.appSetting.findUnique({ where: { key: "square_overrides" } });
+  const map = row ? (JSON.parse(row.value) as Record<string, number | string>) : {};
+  map[name] = value === "ignore" ? IGNORE : value;
+  await prisma.appSetting.upsert({
+    where: { key: "square_overrides" },
+    update: { value: JSON.stringify(map) },
+    create: { key: "square_overrides", value: JSON.stringify(map) },
+  });
+  revalidatePath("/settings");
+}
+
+/** INSIGHTS: set each flavor's % from the imported Square flavor mix. */
+export async function applyFlavorMixFromSquare() {
+  const grouped = await prisma.squareSale.groupBy({
+    by: ["flavorId"],
+    where: { flavorId: { not: null } },
+    _sum: { qty: true },
+  });
+  const total = grouped.reduce((s, g) => s + (g._sum.qty ?? 0), 0);
+  if (total === 0) return { ok: false, message: "No attributed Square sales yet." };
+  const pcts = toPct100(grouped.map((g) => ({ id: g.flavorId as number, share: (g._sum.qty ?? 0) / total })));
+  for (const [flavorId, pct] of pcts) {
+    await prisma.flavor.update({ where: { id: flavorId as number }, data: { pct } });
+  }
+  revalidatePath("/settings");
+  revalidatePath("/plan");
+  revalidatePath("/prep");
+  revalidatePath("/insights");
+  return { ok: true };
+}
+
+/** INSIGHTS: set each schmear type's % from the imported Square schmear mix. */
+export async function applySchmearMixFromSquare() {
+  const config = await getConfig();
+  const grouped = await prisma.squareSale.groupBy({
+    by: ["schmearKey"],
+    where: { schmearKey: { not: null } },
+    _sum: { qty: true },
+  });
+  const total = grouped.reduce((s, g) => s + (g._sum.qty ?? 0), 0);
+  if (total === 0) return { ok: false, message: "No attributed schmear sales yet." };
+  const pcts = toPct100(grouped.map((g) => ({ id: g.schmearKey as string, share: (g._sum.qty ?? 0) / total })));
+  const types = config.schmear.types.map((t) => ({ ...t, pct: pcts.get(t.key) ?? 0 }));
+  await prisma.appSetting.upsert({
+    where: { key: "schmear_config" },
+    update: { value: JSON.stringify({ ...config.schmear, types }) },
+    create: { key: "schmear_config", value: JSON.stringify({ ...config.schmear, types }) },
+  });
+  revalidatePath("/settings");
+  revalidatePath("/prep");
+  revalidatePath("/insights");
+  return { ok: true };
 }
 
 /** CFG: clear bake history + plans, keep configuration. */
