@@ -50,7 +50,7 @@ export default async function SettingsPage() {
 
       <section className="card">
         <h2 className="mb-2 font-bold">Schmears</h2>
-        <p className="mb-2 text-xs text-crust/50">Serving size and the weekly split across the 4 types (base recipes are applied automatically).</p>
+        <p className="mb-2 text-xs text-crust/50">Serving size and the weekly split across all types (base recipes are applied automatically).</p>
         <SchmearEditor initial={config.schmear} />
       </section>
 
@@ -73,6 +73,7 @@ export default async function SettingsPage() {
           configured={isSquareConfigured()}
           env={squareEnvLabel()}
           flavors={flavors.map((f) => ({ id: f.id, name: f.name }))}
+          schmears={config.schmear.types.map((t) => ({ key: t.key, name: t.name }))}
           initialUnmapped={unmapped}
         />
       </section>

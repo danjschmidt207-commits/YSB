@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { importSquareSales, setSquareOverride } from "@/app/actions";
+import { importSquareSales, setSquareOverride, ignoreSquareModifiers } from "@/app/actions";
 
 function isoDaysAgo(n: number) {
   const d = new Date();
@@ -13,11 +13,13 @@ export function SquareSection({
   configured,
   env,
   flavors,
+  schmears,
   initialUnmapped,
 }: {
   configured: boolean;
   env: string;
   flavors: { id: number; name: string }[];
+  schmears: { key: string; name: string }[];
   initialUnmapped: string[];
 }) {
   const [from, setFrom] = useState(isoDaysAgo(56));
@@ -51,7 +53,7 @@ export function SquareSection({
           start(async () => {
             const r = await importSquareSales(from, to);
             setUnmapped(r.unmapped);
-            setResult(`Imported ${r.imported.toLocaleString()} lines from ${r.source}.${r.unmapped.length ? ` ${r.unmapped.length} modifier(s) need mapping below.` : " All mapped."}`);
+            setResult(`Imported ${r.imported.toLocaleString()} bagel/schmear lines from ${r.source}.${r.unmapped.length ? ` ${r.unmapped.length} option(s) need mapping below.` : " All mapped."}`);
           })
         }
         disabled={pending}
@@ -63,41 +65,74 @@ export function SquareSection({
 
       {unmapped.length > 0 && (
         <div className="space-y-2 rounded-xl border border-amber-200 bg-amber-50 p-3">
-          <p className="text-sm font-medium text-amber-800">Map these Square options, then re-import to apply:</p>
+          <div className="flex items-center justify-between">
+            <p className="text-sm font-medium text-amber-800">Map these Square options, then re-import to apply:</p>
+            <button
+              onClick={() => start(() => ignoreSquareModifiers(unmapped).then(() => setUnmapped([])))}
+              disabled={pending}
+              className="btn-ghost !px-2 !py-1 text-xs"
+            >
+              Ignore the rest
+            </button>
+          </div>
           {unmapped.map((name) => (
-            <UnmappedRow key={name} name={name} flavors={flavors} />
+            <UnmappedRow
+              key={name}
+              name={name}
+              flavors={flavors}
+              schmears={schmears}
+              onDone={() => setUnmapped((u) => u.filter((x) => x !== name))}
+            />
           ))}
         </div>
       )}
 
       <p className="text-xs text-crust/50">
-        Imports completed orders and reads the flavor/schmear from each line&apos;s modifiers. Run it again after mapping,
-        or whenever you want fresh data. See <a className="underline" href="https://developer.squareup.com/docs/orders-api/what-it-does" target="_blank" rel="noreferrer">Square Orders API</a>.
+        Reads the flavor/schmear from each line&apos;s modifiers. Map all your past rotator flavors to <strong>Rotator</strong>,
+        weekly rotating schmears to <strong>Rotator Schmear</strong>, and ignore unrelated options (coffee, etc.). Re-import after mapping.
       </p>
     </div>
   );
 }
 
-function UnmappedRow({ name, flavors }: { name: string; flavors: { id: number; name: string }[] }) {
+function UnmappedRow({
+  name,
+  flavors,
+  schmears,
+  onDone,
+}: {
+  name: string;
+  flavors: { id: number; name: string }[];
+  schmears: { key: string; name: string }[];
+  onDone: () => void;
+}) {
   const [val, setVal] = useState("");
   const [pending, start] = useTransition();
-  const [saved, setSaved] = useState(false);
+
+  function save() {
+    const value = val === "ignore" ? "ignore" : val.startsWith("schmear:") ? val : Number(val);
+    start(() => setSquareOverride(name, value).then(onDone));
+  }
+
   return (
     <div className="flex items-center gap-2">
-      <span className="flex-1 text-sm font-mono text-crust/70">{name}</span>
-      <select value={val} onChange={(e) => { setVal(e.target.value); setSaved(false); }} className="rounded-lg border border-crust/20 px-2 py-1.5 text-sm">
+      <span className="flex-1 truncate text-sm font-mono text-crust/70">{name}</span>
+      <select value={val} onChange={(e) => setVal(e.target.value)} className="rounded-lg border border-crust/20 px-2 py-1.5 text-sm">
         <option value="">Map to…</option>
-        {flavors.map((f) => (
-          <option key={f.id} value={String(f.id)}>{f.name}</option>
-        ))}
-        <option value="ignore">Ignore</option>
+        <optgroup label="Bagel flavor">
+          {flavors.map((f) => (
+            <option key={f.id} value={String(f.id)}>{f.name}</option>
+          ))}
+        </optgroup>
+        <optgroup label="Schmear">
+          {schmears.map((s) => (
+            <option key={s.key} value={`schmear:${s.key}`}>{s.name}</option>
+          ))}
+        </optgroup>
+        <option value="ignore">Ignore (not a bagel/schmear)</option>
       </select>
-      <button
-        onClick={() => start(() => setSquareOverride(name, val === "ignore" ? "ignore" : Number(val)).then(() => setSaved(true)))}
-        disabled={!val || pending}
-        className="btn-ghost !px-3 !py-1.5 text-xs disabled:opacity-40"
-      >
-        {pending ? "…" : saved ? "✓" : "Save"}
+      <button onClick={save} disabled={!val || pending} className="btn-ghost !px-3 !py-1.5 text-xs disabled:opacity-40">
+        {pending ? "…" : "Save"}
       </button>
     </div>
   );
