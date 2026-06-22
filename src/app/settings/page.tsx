@@ -1,22 +1,26 @@
 import { prisma } from "@/lib/db";
 import { getConfig } from "@/lib/serverConfig";
 import { DOW_NAMES } from "@/lib/dates";
+import { isSquareConfigured, squareEnvLabel } from "@/lib/square";
 import { FlavorRow, NumberSetting, DoughEditor, StarterEditor, SchmearEditor, DangerButtons } from "./SettingsClient";
+import { SquareSection } from "./SquareClient";
 
 export const dynamic = "force-dynamic";
 
 export default async function SettingsPage() {
-  const [flavors, config] = await Promise.all([
+  const [flavors, config, unmappedRow] = await Promise.all([
     prisma.flavor.findMany({ orderBy: { displayOrder: "asc" } }),
     getConfig(),
+    prisma.appSetting.findUnique({ where: { key: "square_unmapped" } }),
   ]);
   const pctSum = flavors.filter((f) => f.active).reduce((s, f) => s + f.pct, 0);
+  const unmapped: string[] = unmappedRow ? JSON.parse(unmappedRow.value) : [];
 
   return (
     <div className="space-y-6">
       <header>
         <h1 className="text-2xl font-extrabold">Settings</h1>
-        <p className="text-sm text-crust/60">Flavors &amp; percentages, dough &amp; starter, schmears, and hours — all adjustable.</p>
+        <p className="text-sm text-crust/60">Flavors &amp; percentages, dough &amp; starter, schmears, hours, and Square — all adjustable.</p>
       </header>
 
       <section className="card">
@@ -58,6 +62,19 @@ export default async function SettingsPage() {
           <span>Plan lock deadline</span>
           <span className="font-semibold">{DOW_NAMES[config.lockDeadlineDow]}</span>
         </div>
+      </section>
+
+      <section className="card">
+        <h2 className="mb-2 font-bold">Square sales import</h2>
+        <p className="mb-2 text-xs text-crust/50">
+          Pull completed orders from Square to derive your real flavor &amp; schmear mix and demand (see Insights).
+        </p>
+        <SquareSection
+          configured={isSquareConfigured()}
+          env={squareEnvLabel()}
+          flavors={flavors.map((f) => ({ id: f.id, name: f.name }))}
+          initialUnmapped={unmapped}
+        />
       </section>
 
       <section className="card border-red-200">
