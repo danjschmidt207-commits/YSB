@@ -236,6 +236,11 @@ export async function importSquareSales(fromIso: string, toIso: string) {
     overrides
   );
 
+  // Replace any prior import of this date range (fixes older/buggy rows on re-import).
+  await prisma.squareSale.deleteMany({
+    where: { date: { gte: parseIsoDate(fromIso), lte: parseIsoDate(toIso) } },
+  });
+
   const unmapped = new Set<string>();
   let imported = 0;
   for (const line of lines) {
