@@ -1,5 +1,7 @@
-// Square integration (spec §8) — pulls completed orders and normalizes them to SaleLine[].
-// Flavors/schmears are read from each order line's MODIFIERS (the owner's Square setup).
+// Square integration (spec §8) — pulls completed orders and normalizes them to per-modifier
+// SaleLine units. Bagel flavor / schmear live in each order line's MODIFIERS, and each modifier
+// carries a quantity (e.g. a 6-box = "Everything × 2, Asiago × 3, Plain"). We emit one SaleLine
+// per modifier selection with its quantity, so multi-bagel boxes count correctly.
 //
 // Real client uses a Personal Access Token (server-side env). When SQUARE_ACCESS_TOKEN is unset,
 // a mock generates realistic history so the import → attribute → insights flow is testable.
@@ -7,11 +9,11 @@
 import { OPEN_DOWS } from "./dates";
 
 export interface SaleLine {
-  uid: string; // stable id (orderId:lineUid) for dedupe
+  uid: string; // stable id (orderId:lineUid:modifierIndex) for dedupe
   soldAt: string; // ISO datetime
   itemName: string;
-  modifierNames: string[];
-  qty: number;
+  modifier: string; // a single modifier name (a flavor, a schmear, or something to ignore)
+  qty: number; // modifier quantity × line quantity (number of bagels/tubs)
 }
 
 export function isSquareConfigured(): boolean {
@@ -27,6 +29,11 @@ function baseUrl(): string {
   return process.env.SQUARE_ENVIRONMENT === "sandbox"
     ? "https://connect.squareupsandbox.com"
     : "https://connect.squareup.com";
+}
+
+function intQty(v: string | undefined): number {
+  const n = Math.round(Number(v ?? "1"));
+  return Number.isFinite(n) && n > 0 ? n : 1;
 }
 
 /** Fetch completed-order sale lines between two ISO dates (inclusive). Mock when unconfigured. */
@@ -71,14 +78,17 @@ export async function fetchSquareSales(startIso: string, endIso: string): Promis
     for (const order of data.orders ?? []) {
       const soldAt = order.closed_at ?? order.created_at ?? end;
       for (const li of order.line_items ?? []) {
-        const modifierNames = (li.modifiers ?? []).map((m) => m.name).filter(Boolean) as string[];
-        if (li.variation_name) modifierNames.push(li.variation_name);
-        lines.push({
-          uid: `${order.id}:${li.uid ?? Math.random().toString(36).slice(2)}`,
-          soldAt,
-          itemName: li.name ?? "Item",
-          modifierNames,
-          qty: Math.max(1, Math.round(Number(li.quantity ?? "1"))),
+        const lineQty = intQty(li.quantity);
+        const lineUid = li.uid ?? Math.random().toString(36).slice(2);
+        (li.modifiers ?? []).forEach((mod, i) => {
+          if (!mod.name) return;
+          lines.push({
+            uid: `${order.id}:${lineUid}:${i}`,
+            soldAt,
+            itemName: li.name ?? "Item",
+            modifier: mod.name,
+            qty: intQty(mod.quantity) * lineQty,
+          });
         });
       }
     }
@@ -98,7 +108,7 @@ interface SquareOrdersResponse {
       name?: string;
       quantity?: string;
       variation_name?: string;
-      modifiers?: { name?: string }[];
+      modifiers?: { name?: string; quantity?: string }[];
     }[];
   }[];
   cursor?: string;
@@ -107,17 +117,22 @@ interface SquareOrdersResponse {
 // ---- mock ----
 
 const MOCK_FLAVORS: { name: string; weight: number }[] = [
-  { name: "Everything", weight: 0.42 },
-  { name: "Plain", weight: 0.14 },
+  { name: "Everything", weight: 0.36 },
+  { name: "Plain", weight: 0.16 },
   { name: "Asiago", weight: 0.17 },
-  { name: "Salt", weight: 0.12 },
-  { name: "Rotator", weight: 0.15 },
+  { name: "Salt", weight: 0.15 },
+  // historical rotators (the operator maps these to "Rotator")
+  { name: "Sesame", weight: 0.07 },
+  { name: "Cheddar Jalepeño", weight: 0.04 },
+  { name: "Cinnamon Sugar", weight: 0.03 },
+  { name: "Poppy Seed", weight: 0.02 },
 ];
 const MOCK_SCHMEARS: { name: string; weight: number }[] = [
-  { name: "Plain", weight: 0.45 },
-  { name: "Bacon & Scallion", weight: 0.18 },
-  { name: "Chive & Herb", weight: 0.22 },
-  { name: "Lox & Dill", weight: 0.15 },
+  { name: "Plain CC", weight: 0.3 },
+  { name: "Bacon & Scallion", weight: 0.28 },
+  { name: "Chive & Herb", weight: 0.24 },
+  { name: "Lox & Dill", weight: 0.14 },
+  { name: "Butter", weight: 0.04 },
 ];
 const WEEKDAY_VOLUME: Record<number, number> = { 3: 120, 4: 175, 5: 150, 6: 180, 0: 140 };
 
@@ -139,7 +154,7 @@ function pick(rng: () => number, items: { name: string; weight: number }[]): str
   return items[0].name;
 }
 
-/** Generate plausible bagel+schmear sale lines (one bagel per line, ~40% with a schmear). */
+/** Generate plausible per-modifier sale lines (one bagel per flavor line, ~40% with a schmear). */
 function mockSales(startIso: string, endIso: string): SaleLine[] {
   const lines: SaleLine[] = [];
   const start = new Date(startIso + "T00:00:00.000Z");
@@ -154,15 +169,11 @@ function mockSales(startIso: string, endIso: string): SaleLine[] {
       const minutes = Math.round(480 + Math.pow(rng(), 1.4) * 300); // 8:00 + front-loaded into 5h
       const hh = String(Math.floor(minutes / 60)).padStart(2, "0");
       const mm = String(minutes % 60).padStart(2, "0");
-      const mods = [pick(rng, MOCK_FLAVORS)];
-      if (rng() < 0.4) mods.push(pick(rng, MOCK_SCHMEARS) + " Schmear");
-      lines.push({
-        uid: `mock-${dateIso}-${i}`,
-        soldAt: `${dateIso}T${hh}:${mm}:00.000Z`,
-        itemName: "Bagel",
-        modifierNames: mods,
-        qty: 1,
-      });
+      const at = `${dateIso}T${hh}:${mm}:00.000Z`;
+      lines.push({ uid: `mock-${dateIso}-${i}-f`, soldAt: at, itemName: "Bagel", modifier: pick(rng, MOCK_FLAVORS), qty: 1 });
+      if (rng() < 0.4) {
+        lines.push({ uid: `mock-${dateIso}-${i}-s`, soldAt: at, itemName: "Bagel", modifier: pick(rng, MOCK_SCHMEARS), qty: 1 });
+      }
     }
   }
   return lines;

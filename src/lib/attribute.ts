@@ -37,6 +37,28 @@ export interface LineAttribution {
   unmapped: string[];
 }
 
+export interface ModifierAttribution {
+  flavorId: number | null;
+  schmearKey: string | null;
+  /** True if the modifier resolved to a flavor, a schmear, or an explicit ignore. */
+  mapped: boolean;
+}
+
+/** Attribute a SINGLE modifier (one bagel flavor or one schmear). Used by the importer. */
+export function attributeModifier(name: string, ctx: AttributeContext): ModifierAttribution {
+  const n = norm(name);
+  const ov = ctx.overrides.get(n);
+  if (ov === IGNORE) return { flavorId: null, schmearKey: null, mapped: true };
+  if (typeof ov === "number") return { flavorId: ov, schmearKey: null, mapped: true };
+  if (typeof ov === "string" && ov.startsWith(SCHMEAR_PREFIX)) {
+    return { flavorId: null, schmearKey: ov.slice(SCHMEAR_PREFIX.length), mapped: true };
+  }
+  if (ctx.flavorByNorm.has(n)) return { flavorId: ctx.flavorByNorm.get(n)!, schmearKey: null, mapped: true };
+  const schmear = ctx.schmears.find((s) => n.includes(s.norm));
+  if (schmear) return { flavorId: null, schmearKey: schmear.key, mapped: true };
+  return { flavorId: null, schmearKey: null, mapped: false };
+}
+
 export function attributeLine(modifierNames: string[], ctx: AttributeContext): LineAttribution {
   let flavorId: number | null = null;
   let schmearKey: string | null = null;
