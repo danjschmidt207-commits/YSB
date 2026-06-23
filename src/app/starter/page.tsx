@@ -1,12 +1,16 @@
 import Link from "next/link";
+import { prisma } from "@/lib/db";
 import { loadWeekPrep } from "@/lib/prepData";
 import { shortLabel, isoDate, addDays, DOW_NAMES, DOW_SHORT } from "@/lib/dates";
-import { g } from "@/lib/calc";
+import { StarterRows, type StarterDay } from "./StarterClient";
 
 export const dynamic = "force-dynamic";
 
 export default async function StarterPage() {
-  const { targetWed, config, prep } = await loadWeekPrep();
+  const [{ targetWed, config, prep }, ratioRow] = await Promise.all([
+    loadWeekPrep(),
+    prisma.appSetting.findUnique({ where: { key: "starter_ratio_by_dow" } }),
+  ]);
 
   if (!prep) {
     return (
@@ -20,52 +24,43 @@ export default async function StarterPage() {
     );
   }
 
+  const overrides: Record<string, { seed: number; flour: number; water: number }> = ratioRow ? JSON.parse(ratioRow.value) : {};
+
+  const days: StarterDay[] = prep.days.map((d) => {
+    const feedNight = addDays(d.date, -config.starter.leadNights);
+    const ratio = overrides[String(d.dow)] ?? {
+      seed: config.starter.seed,
+      flour: config.starter.flour,
+      water: config.starter.water,
+    };
+    return {
+      dow: d.dow,
+      feedNightLabel: DOW_NAMES[feedNight.getUTCDay()],
+      bakeLabel: `${DOW_SHORT[d.dow]} ${isoDate(d.date).slice(5)}`,
+      neededG: d.starter.neededG,
+      bufferPct: config.starter.bufferPct,
+      ratio,
+    };
+  });
+
   return (
     <div className="space-y-6">
       <header className="flex items-end justify-between">
         <div>
           <h1 className="text-2xl font-extrabold">Starter feeding</h1>
           <p className="text-sm text-crust/60">
-            Week of {shortLabel(targetWed)} · feed {config.starter.leadNights} nights ahead (ratio {config.starter.seed}:{config.starter.flour}:{config.starter.water}, +{config.starter.bufferPct}% buffer)
+            Week of {shortLabel(targetWed)} · feed {config.starter.leadNights} nights ahead · +{config.starter.bufferPct}% buffer
           </p>
         </div>
         <Link href="/dough" className="text-sm text-crust/60 underline">Dough →</Link>
       </header>
 
-      <section className="card space-y-2">
-        <div className="overflow-x-auto">
-          <table className="w-full min-w-[34rem] text-sm">
-            <thead>
-              <tr>
-                <th className="th">Feed night</th>
-                <th className="th">For bake day</th>
-                <th className="th text-right">Build</th>
-                <th className="th text-right">Starter</th>
-                <th className="th text-right">Flour</th>
-                <th className="th text-right">Water</th>
-              </tr>
-            </thead>
-            <tbody>
-              {prep.days.map((d) => {
-                const feedNight = addDays(d.date, -config.starter.leadNights);
-                return (
-                  <tr key={d.dow} className="border-t border-crust/5">
-                    <td className="td font-semibold">{DOW_NAMES[feedNight.getUTCDay()]} night</td>
-                    <td className="td">{DOW_SHORT[d.dow]} {isoDate(d.date).slice(5)}</td>
-                    <td className="td text-right font-semibold">{g(d.starter.buildG)}</td>
-                    <td className="td text-right">{g(d.starter.seedG)}</td>
-                    <td className="td text-right">{g(d.starter.flourG)}</td>
-                    <td className="td text-right">{g(d.starter.waterG)}</td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-        <p className="text-xs text-crust/50">
-          &quot;Build&quot; is total starter to make that night (needed for dough + {config.starter.bufferPct}% buffer), split into seed/flour/water by the feed ratio.
-        </p>
-      </section>
+      <p className="text-xs text-crust/50">
+        Feed ratio defaults to {config.starter.seed}:{config.starter.flour}:{config.starter.water} (seed:flour:water) — adjust it per day below.
+        &quot;Build&quot; is the total starter to make that night; it splits into seed/flour/water by the ratio.
+      </p>
+
+      <StarterRows days={days} />
     </div>
   );
 }

@@ -1,7 +1,8 @@
 import Link from "next/link";
 import { loadWeekPrep } from "@/lib/prepData";
-import { shortLabel, isoDate, DOW_SHORT } from "@/lib/dates";
-import { g, lb, gLb } from "@/lib/calc";
+import { shortLabel, isoDate, DOW_NAMES } from "@/lib/dates";
+import { doughBatches, g, lb } from "@/lib/calc";
+import { LB } from "@/lib/config";
 
 export const dynamic = "force-dynamic";
 
@@ -20,7 +21,7 @@ export default async function DoughPage() {
     );
   }
 
-  const { days, doughFlour, feedFlour, honey, salt, totalFlour, weeklyBagels } = prep;
+  const maxBatchG = config.doughBatchMaxLb * LB;
 
   return (
     <div className="space-y-6">
@@ -28,79 +29,64 @@ export default async function DoughPage() {
         <div>
           <h1 className="text-2xl font-extrabold">Dough</h1>
           <p className="text-sm text-crust/60">
-            Week of {shortLabel(targetWed)} · {weeklyBagels} bagels · {config.dough.bagelWeightG} g/bagel
+            Week of {shortLabel(targetWed)} · {config.dough.bagelWeightG} g/bagel · max {config.doughBatchMaxLb} lb/batch
           </p>
         </div>
-        <Link href="/bake" className="text-sm text-crust/60 underline">Bake →</Link>
+        <Link href="/settings" className="text-sm text-crust/60 underline">Batch size →</Link>
       </header>
 
-      {/* Weekly ingredient order */}
-      <section className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-        <Kpi label="Flour to order" value={lb(totalFlour)} sub={`${(totalFlour / 1000).toFixed(1)} kg`} />
-        <Kpi label="Honey" value={lb(honey)} sub={g(honey)} />
-        <Kpi label="Salt (dough)" value={g(salt)} sub="" />
-        <Kpi label="Dough flour" value={lb(doughFlour)} sub={`+ feed ${lb(feedFlour)}`} />
-      </section>
+      <div className="grid gap-3 sm:grid-cols-2">
+        {prep.days.map((d) => {
+          const { count, perBatchG } = doughBatches(d.dough.totalDoughG, maxBatchG);
+          const per = (whole: number) => (count > 0 ? whole / count : 0);
+          return (
+            <div key={d.dow} className="card space-y-2">
+              <div className="flex items-baseline justify-between">
+                <span className="text-lg font-bold">{DOW_NAMES[d.dow]} <span className="text-sm font-normal text-crust/40">{isoDate(d.date).slice(5)}</span></span>
+                <span className="text-xs text-crust/50">{d.bagels} bagels · {lb(d.dough.totalDoughG)} dough</span>
+              </div>
 
-      <section className="card space-y-2">
-        <p className="text-xs text-crust/50">
-          Ratio flour {config.dough.flour} : starter {config.dough.starter} : water {config.dough.water} : honey {config.dough.honey} : salt {config.dough.salt}.
-          Dough is mixed the morning before each bake day.
-        </p>
-        <div className="overflow-x-auto">
-          <table className="w-full min-w-[36rem] text-sm">
-            <thead>
-              <tr>
-                <th className="th">Bake day</th>
-                <th className="th text-right">Bagels</th>
-                <th className="th text-right">Dough</th>
-                <th className="th text-right">Flour</th>
-                <th className="th text-right">Starter</th>
-                <th className="th text-right">Water</th>
-                <th className="th text-right">Honey</th>
-                <th className="th text-right">Salt</th>
-              </tr>
-            </thead>
-            <tbody>
-              {days.map((d) => (
-                <tr key={d.dow} className="border-t border-crust/5">
-                  <td className="td font-semibold">{DOW_SHORT[d.dow]} {isoDate(d.date).slice(5)}</td>
-                  <td className="td text-right">{d.bagels}</td>
-                  <td className="td text-right">{(d.dough.totalDoughG / 1000).toFixed(1)} kg</td>
-                  <td className="td text-right">{g(d.dough.flourG)}</td>
-                  <td className="td text-right">{g(d.dough.starterG)}</td>
-                  <td className="td text-right">{g(d.dough.waterG)}</td>
-                  <td className="td text-right">{g(d.dough.honeyG)}</td>
-                  <td className="td text-right">{g(d.dough.saltG)}</td>
-                </tr>
-              ))}
-              <tr className="border-t border-crust/20 font-semibold">
-                <td className="td">Week</td>
-                <td className="td text-right">{weeklyBagels}</td>
-                <td className="td text-right">{(days.reduce((s, d) => s + d.dough.totalDoughG, 0) / 1000).toFixed(1)} kg</td>
-                <td className="td text-right">{g(doughFlour)}</td>
-                <td className="td text-right">{g(days.reduce((s, d) => s + d.dough.starterG, 0))}</td>
-                <td className="td text-right">{g(days.reduce((s, d) => s + d.dough.waterG, 0))}</td>
-                <td className="td text-right">{g(honey)}</td>
-                <td className="td text-right">{g(salt)}</td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-        <p className="text-xs text-crust/50">
-          Total flour to order = dough flour ({g(doughFlour)}) + starter-feed flour ({g(feedFlour)}) = <strong>{gLb(totalFlour)}</strong>.
-        </p>
-      </section>
-    </div>
-  );
-}
+              {count === 0 ? (
+                <p className="text-sm text-crust/40">No bake planned.</p>
+              ) : (
+                <>
+                  <div className="rounded-xl bg-amber-100/60 px-3 py-2 text-amber-900">
+                    <span className="text-2xl font-extrabold">{count}</span>
+                    <span className="font-semibold"> {count === 1 ? "batch" : "batches"}</span>
+                    <span className="text-sm"> · {lb(perBatchG)} each ({(perBatchG / 1000).toFixed(1)} kg)</span>
+                  </div>
+                  <div className="text-xs font-medium text-crust/45">Per batch</div>
+                  <table className="w-full text-sm">
+                    <tbody>
+                      {[
+                        ["Flour", d.dough.flourG],
+                        ["Starter", d.dough.starterG],
+                        ["Water", d.dough.waterG],
+                        ["Honey", d.dough.honeyG],
+                        ["Salt", d.dough.saltG],
+                      ].map(([name, whole]) => (
+                        <tr key={name as string} className="border-t border-crust/5">
+                          <td className="py-1 text-crust/70">{name}</td>
+                          <td className="py-1 text-right font-semibold tabular-nums">{g(per(whole as number))}</td>
+                        </tr>
+                      ))}
+                      <tr className="border-t border-crust/10">
+                        <td className="py-1 font-semibold">Dough / batch</td>
+                        <td className="py-1 text-right font-semibold tabular-nums">{(perBatchG / 1000).toFixed(1)} kg</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </>
+              )}
+            </div>
+          );
+        })}
+      </div>
 
-function Kpi({ label, value, sub }: { label: string; value: string; sub: string }) {
-  return (
-    <div className="card !p-3 text-center">
-      <div className="label">{label}</div>
-      <div className="text-xl font-bold tabular-nums">{value}</div>
-      {sub && <div className="text-xs text-crust/40">{sub}</div>}
+      <p className="text-xs text-crust/50">
+        Each day is split into the fewest equal batches that stay under {config.doughBatchMaxLb} lb (editable in Settings).
+        Mix each batch to the per-batch amounts above.
+      </p>
     </div>
   );
 }

@@ -10,6 +10,7 @@ import {
   boardsForBagels,
   formatBoards,
   creamCheeseBlocks,
+  doughBatches,
 } from "./calc.ts";
 import { DEFAULT_DOUGH, DEFAULT_STARTER, DEFAULT_SCHMEAR, LB } from "./config.ts";
 
@@ -92,6 +93,21 @@ test("formatBoards renders halves as ½", () => {
   assert.equal(formatBoards(2), "2");
   assert.equal(formatBoards(0.5), "½");
   assert.equal(formatBoards(0), "0");
+});
+
+test("doughBatches splits into the fewest equal batches under the cap", () => {
+  const max = 40 * LB;
+  // 82 lb dough, 40 lb cap -> 3 batches (ceil(82/40)=3), each ~27.3 lb, all under cap.
+  const b = doughBatches(82 * LB, max);
+  assert.equal(b.count, 3);
+  assert.ok(b.perBatchG / LB <= 40 + 1e-9);
+  assert.ok(Math.abs(b.perBatchG * b.count - 82 * LB) < 1e-6); // batches sum to the total
+  // exactly at the cap -> one batch
+  assert.equal(doughBatches(40 * LB, max).count, 1);
+  // just over the cap -> two batches
+  assert.equal(doughBatches(40.1 * LB, max).count, 2);
+  // empty day -> no batches
+  assert.equal(doughBatches(0, max).count, 0);
 });
 
 test("creamCheeseBlocks rounds grams to whole 3-lb blocks", () => {

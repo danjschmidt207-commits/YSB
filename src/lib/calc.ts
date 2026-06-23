@@ -49,6 +49,17 @@ export function doughForBagels(bagels: number, d: DoughRecipe): DoughResult {
   };
 }
 
+/**
+ * Split a day's total dough into the FEWEST equal mixer batches that each stay within the max
+ * batch weight. e.g. 82 lb dough with a 40 lb cap → 3 batches of ~27.3 lb. Returns 0 batches for
+ * an empty day.
+ */
+export function doughBatches(totalDoughG: number, maxBatchG: number): { count: number; perBatchG: number } {
+  if (totalDoughG <= 0 || maxBatchG <= 0) return { count: 0, perBatchG: 0 };
+  const count = Math.max(1, Math.ceil(totalDoughG / maxBatchG));
+  return { count, perBatchG: totalDoughG / count };
+}
+
 // ---- starter feeding ----
 
 export interface StarterResult {

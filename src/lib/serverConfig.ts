@@ -39,6 +39,7 @@ export async function getConfig(): Promise<AppConfig> {
     closeTime: m.get("retail_close_time") ?? DEFAULT_CONFIG.closeTime,
     lockDeadlineDow: m.has("lock_deadline_dow") ? Number(m.get("lock_deadline_dow")) : DEFAULT_CONFIG.lockDeadlineDow,
     alertWindowDays: m.has("order_alert_window_days") ? Number(m.get("order_alert_window_days")) : DEFAULT_CONFIG.alertWindowDays,
+    doughBatchMaxLb: m.has("dough_batch_max_lb") ? Number(m.get("dough_batch_max_lb")) : DEFAULT_CONFIG.doughBatchMaxLb,
     dough: mergeJson(m.get("dough_recipe"), DEFAULT_DOUGH),
     starter: mergeJson(m.get("starter_feed"), DEFAULT_STARTER),
     schmear: mergeSchmear(m.get("schmear_config")),

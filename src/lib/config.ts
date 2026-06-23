@@ -153,16 +153,21 @@ export interface AppConfig {
   closeTime: string;
   lockDeadlineDow: number; // 2 = Tuesday
   alertWindowDays: number;
+  doughBatchMaxLb: number; // max dough weight per mixer batch
   dough: DoughRecipe;
   starter: StarterConfig;
   schmear: SchmearConfig;
 }
+
+/** Mixer caps out at 44 lb; default the working limit a bit below so runs stay comfortable. */
+export const DEFAULT_DOUGH_BATCH_MAX_LB = 40;
 
 export const DEFAULT_CONFIG: AppConfig = {
   openTime: "08:00",
   closeTime: "13:00",
   lockDeadlineDow: 2, // Tuesday
   alertWindowDays: 3,
+  doughBatchMaxLb: DEFAULT_DOUGH_BATCH_MAX_LB,
   dough: DEFAULT_DOUGH,
   starter: DEFAULT_STARTER,
   schmear: DEFAULT_SCHMEAR,
@@ -175,6 +180,7 @@ export function defaultSettingRows(): { key: string; value: string }[] {
     { key: "retail_close_time", value: DEFAULT_CONFIG.closeTime },
     { key: "lock_deadline_dow", value: String(DEFAULT_CONFIG.lockDeadlineDow) },
     { key: "order_alert_window_days", value: String(DEFAULT_CONFIG.alertWindowDays) },
+    { key: "dough_batch_max_lb", value: String(DEFAULT_DOUGH_BATCH_MAX_LB) },
     { key: "dough_recipe", value: JSON.stringify(DEFAULT_DOUGH) },
     { key: "starter_feed", value: JSON.stringify(DEFAULT_STARTER) },
     { key: "schmear_config", value: JSON.stringify(DEFAULT_SCHMEAR) },

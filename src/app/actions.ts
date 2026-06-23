@@ -187,6 +187,24 @@ export async function savePlanDayWholesale(planDayId: number, qty: number) {
   revalidatePath("/starter");
 }
 
+/** CFG: per-weekday starter feed-ratio override (seed:flour:water). Stored as one JSON setting. */
+export async function saveStarterRatio(dayOfWeek: number, ratio: { seed: number; flour: number; water: number }) {
+  const row = await prisma.appSetting.findUnique({ where: { key: "starter_ratio_by_dow" } });
+  const map = row ? (JSON.parse(row.value) as Record<string, { seed: number; flour: number; water: number }>) : {};
+  map[String(dayOfWeek)] = {
+    seed: Math.max(0, ratio.seed || 0),
+    flour: Math.max(0, ratio.flour || 0),
+    water: Math.max(0, ratio.water || 0),
+  };
+  await prisma.appSetting.upsert({
+    where: { key: "starter_ratio_by_dow" },
+    update: { value: JSON.stringify(map) },
+    create: { key: "starter_ratio_by_dow", value: JSON.stringify(map) },
+  });
+  revalidatePath("/starter");
+  return { ok: true };
+}
+
 /** PLN: name this week's rotator flavor. */
 export async function setRotatorName(planId: number, name: string) {
   await prisma.weeklyPlan.update({ where: { id: planId }, data: { rotatorName: name.trim() || null } });

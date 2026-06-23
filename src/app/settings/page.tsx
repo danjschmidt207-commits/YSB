@@ -41,6 +41,14 @@ export default async function SettingsPage() {
           <h2 className="mb-2 font-bold">Bagel dough recipe</h2>
           <p className="mb-2 text-xs text-crust/50">Ratio parts + dough weight per bagel.</p>
           <DoughEditor initial={config.dough} />
+          <div className="mt-2 border-t border-crust/10 pt-2">
+            <NumberSetting
+              settingKey="dough_batch_max_lb"
+              label="Max dough per mixer batch (lb)"
+              value={String(config.doughBatchMaxLb)}
+              hint="Mixer caps ~44 lb. The Dough tab splits each day into the fewest equal batches under this."
+            />
+          </div>
         </section>
 
         <section className="card">
