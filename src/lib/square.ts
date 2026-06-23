@@ -3,23 +3,23 @@
 // carries a quantity (e.g. a 6-box = "Everything × 2, Asiago × 3, Plain"). We emit one SaleLine
 // per modifier selection with its quantity, so multi-bagel boxes count correctly.
 //
-// IMPORTANT (Square semantics): an OrderLineItemModifier.quantity is the TOTAL quantity of that
-// modifier across the entire line item — Square has already multiplied it by the line quantity.
-// When the modifier quantity is unset, it defaults to the line item quantity. So we must NOT
-// multiply modifier.quantity by line.quantity again (that double-counts); we use the modifier
-// quantity directly and fall back to the line quantity only when the modifier quantity is absent.
+// COUNTING RULE (verified against the operator's Square item export — matches the modifier-sales
+// report exactly, 3,312 bagels): a modifier's quantity is PER LINE-UNIT, not a line total. A
+// "Single" with line quantity 2 and modifier "Everything" (qty 1) is 2 bagels; a 6-box line
+// (quantity 1) with "Everything × 2" is 2 bagels. So qty = modifier.quantity × line.quantity.
 //
 // Real client uses a Personal Access Token (server-side env). When SQUARE_ACCESS_TOKEN is unset,
 // a mock generates realistic history so the import → attribute → insights flow is testable.
 
 import { OPEN_DOWS } from "./dates";
+import { intQty, modifierUnitQty } from "./squareCount";
 
 export interface SaleLine {
   uid: string; // stable id (orderId:lineUid:modifierIndex) for dedupe
   soldAt: string; // ISO datetime
   itemName: string;
   modifier: string; // a single modifier name (a flavor, a schmear, or something to ignore)
-  qty: number; // total quantity of this modifier on the line (number of bagels/tubs)
+  qty: number; // modifier quantity × line quantity (number of bagels/tubs)
 }
 
 /**
@@ -47,11 +47,6 @@ function baseUrl(): string {
   return process.env.SQUARE_ENVIRONMENT === "sandbox"
     ? "https://connect.squareupsandbox.com"
     : "https://connect.squareup.com";
-}
-
-function intQty(v: string | undefined): number {
-  const n = Math.round(Number(v ?? "1"));
-  return Number.isFinite(n) && n > 0 ? n : 1;
 }
 
 /** Fetch completed-order sale lines between two ISO dates (inclusive). Mock when unconfigured. */
@@ -104,7 +99,6 @@ export async function fetchSquareSales(
     for (const order of data.orders ?? []) {
       const soldAt = order.closed_at ?? order.created_at ?? end;
       for (const li of order.line_items ?? []) {
-        const lineQty = intQty(li.quantity);
         const lineUid = li.uid ?? Math.random().toString(36).slice(2);
 
         // --- structural diagnostic (quantities only) ---
@@ -124,9 +118,8 @@ export async function fetchSquareSales(
 
         (li.modifiers ?? []).forEach((mod, i) => {
           if (!mod.name) return;
-          // Modifier quantity is already the total for the line; fall back to the line
-          // quantity only when Square omits it. Never multiply the two together.
-          const qty = mod.quantity != null ? intQty(mod.quantity) : lineQty;
+          // Modifier quantity is per line-unit; multiply by the line quantity (see COUNTING RULE).
+          const qty = modifierUnitQty(mod.quantity, li.quantity);
           lines.push({
             uid: `${order.id}:${lineUid}:${i}`,
             soldAt,

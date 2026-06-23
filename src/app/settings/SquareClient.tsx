@@ -92,6 +92,7 @@ export function SquareSection({
       <p className="text-xs text-crust/50">
         Reads the flavor/schmear from each line&apos;s modifiers. Map all your past rotator flavors to <strong>Rotator</strong>,
         weekly rotating schmears to <strong>Rotator Schmear</strong>, and ignore unrelated options (coffee, etc.). Re-import after mapping.
+        Each import <strong>replaces all previously imported Square sales</strong> with the range you select, so pick the full window you want to analyze.
       </p>
 
       {diag && (

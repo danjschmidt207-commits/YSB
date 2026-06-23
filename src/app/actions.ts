@@ -236,10 +236,10 @@ export async function importSquareSales(fromIso: string, toIso: string) {
     overrides
   );
 
-  // Replace any prior import of this date range (fixes older/buggy rows on re-import).
-  await prisma.squareSale.deleteMany({
-    where: { date: { gte: parseIsoDate(fromIso), lte: parseIsoDate(toIso) } },
-  });
+  // Full replace: clear ALL prior Square sales, then load the selected range. Each import is the
+  // single source of truth for the imported window — this prevents stale rows from earlier/wider
+  // imports (e.g. dates before opening) from accumulating and inflating the Insights totals.
+  await prisma.squareSale.deleteMany({});
 
   const unmapped = new Set<string>();
   let imported = 0;
