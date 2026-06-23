@@ -7,21 +7,53 @@ export const metadata: Metadata = {
   description: "Plan the week, calculate prep, order ingredients, and learn from your sales.",
 };
 
-// Production-ready tools.
-const NAV = [
-  { href: "/", label: "Home" },
-  { href: "/bake", label: "Bake" },
-  { href: "/plan", label: "Plan" },
-  { href: "/prep", label: "Prep" },
-  { href: "/insights", label: "Insights" },
-  { href: "/settings", label: "Settings" },
-];
+// Nav is organized into color-coded groups so the workflow is obvious at a glance.
+// `dev` marks tabs that aren't production-ready yet.
+type NavItem = { href: string; label: string; dev?: boolean };
+interface NavGroup {
+  items: NavItem[];
+  // Literal Tailwind classes (no dynamic concatenation, so they aren't purged).
+  box: string;
+  link: string;
+}
 
-// Not yet production-ready — grouped separately and labelled.
-const NAV_DEV = [
-  { href: "/inventory", label: "Inventory" },
-  { href: "/order", label: "Order" },
-  { href: "/reports", label: "Reports" },
+const NAV_GROUPS: NavGroup[] = [
+  // Home — neutral
+  { items: [{ href: "/", label: "Home" }], box: "", link: "text-crust/70 hover:bg-crust/5" },
+  // Plan — neutral
+  { items: [{ href: "/plan", label: "Plan" }], box: "", link: "text-crust/70 hover:bg-crust/5" },
+  // Bake-day flow (in order): Starter → Dough → Bake
+  {
+    items: [
+      { href: "/starter", label: "Starter" },
+      { href: "/dough", label: "Dough" },
+      { href: "/bake", label: "Bake" },
+    ],
+    box: "bg-amber-100/60",
+    link: "text-amber-900 hover:bg-amber-200/70",
+  },
+  // Schmear — its own step
+  { items: [{ href: "/schmear", label: "Schmear" }], box: "bg-emerald-100/60", link: "text-emerald-900 hover:bg-emerald-200/70" },
+  // Stock & ordering
+  {
+    items: [
+      { href: "/inventory", label: "Inventory", dev: true },
+      { href: "/order", label: "Order", dev: true },
+    ],
+    box: "bg-sky-100/60",
+    link: "text-sky-900 hover:bg-sky-200/70",
+  },
+  // Analysis
+  {
+    items: [
+      { href: "/reports", label: "Reports", dev: true },
+      { href: "/insights", label: "Insights" },
+    ],
+    box: "bg-violet-100/60",
+    link: "text-violet-900 hover:bg-violet-200/70",
+  },
+  // Settings — neutral
+  { items: [{ href: "/settings", label: "Settings" }], box: "", link: "text-crust/70 hover:bg-crust/5" },
 ];
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
@@ -37,27 +69,21 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
               </Link>
               <span className="pill bg-crust/10 text-crust/60">Phase 1</span>
             </div>
-            <nav className="flex flex-wrap items-center gap-1 px-2 pb-2">
-              {NAV.map((n) => (
-                <Link
-                  key={n.href}
-                  href={n.href}
-                  className="rounded-lg px-3 py-1.5 text-sm font-semibold text-crust/70 hover:bg-crust/5"
-                >
-                  {n.label}
-                </Link>
-              ))}
-              <span className="mx-1 hidden h-5 w-px bg-crust/15 sm:inline-block" aria-hidden />
-              <span className="pill bg-crust/5 text-[10px] uppercase tracking-wide text-crust/40">In dev</span>
-              {NAV_DEV.map((n) => (
-                <Link
-                  key={n.href}
-                  href={n.href}
-                  className="rounded-lg px-3 py-1.5 text-sm font-medium text-crust/40 hover:bg-crust/5"
-                  title="In development — not production ready"
-                >
-                  {n.label}
-                </Link>
+            <nav className="flex flex-wrap items-center gap-1.5 px-2 pb-2">
+              {NAV_GROUPS.map((group, gi) => (
+                <div key={gi} className={`flex items-center gap-0.5 rounded-xl ${group.box ? `${group.box} p-0.5` : ""}`}>
+                  {group.items.map((n) => (
+                    <Link
+                      key={n.href}
+                      href={n.href}
+                      className={`rounded-lg px-3 py-1.5 text-sm font-semibold ${group.link}`}
+                      title={n.dev ? "In development — not production ready" : undefined}
+                    >
+                      {n.label}
+                      {n.dev && <sup className="ml-0.5 text-[9px] font-medium uppercase opacity-60">dev</sup>}
+                    </Link>
+                  ))}
+                </div>
               ))}
             </nav>
           </header>

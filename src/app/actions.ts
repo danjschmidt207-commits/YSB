@@ -149,7 +149,9 @@ export async function generatePlan(weekStartIso: string, rotatorName?: string) {
     }
   }
   revalidatePath("/plan");
-  revalidatePath("/prep");
+  revalidatePath("/schmear");
+  revalidatePath("/dough");
+  revalidatePath("/starter");
   revalidatePath("/");
   return { ok: true, message: "Draft plan generated." };
 }
@@ -168,7 +170,9 @@ export async function savePlanDayTotal(planDayId: number, total: number) {
     });
   }
   revalidatePath("/plan");
-  revalidatePath("/prep");
+  revalidatePath("/schmear");
+  revalidatePath("/dough");
+  revalidatePath("/starter");
 }
 
 /** PLN: set a day's extra wholesale bake (added on top of retail for dough/prep totals). */
@@ -178,21 +182,27 @@ export async function savePlanDayWholesale(planDayId: number, qty: number) {
     data: { wholesaleExtra: Math.max(0, qty || 0) },
   });
   revalidatePath("/plan");
-  revalidatePath("/prep");
+  revalidatePath("/schmear");
+  revalidatePath("/dough");
+  revalidatePath("/starter");
 }
 
 /** PLN: name this week's rotator flavor. */
 export async function setRotatorName(planId: number, name: string) {
   await prisma.weeklyPlan.update({ where: { id: planId }, data: { rotatorName: name.trim() || null } });
   revalidatePath("/plan");
-  revalidatePath("/prep");
+  revalidatePath("/schmear");
+  revalidatePath("/dough");
+  revalidatePath("/starter");
 }
 
 /** PLN: lock / unlock a week (locked feeds the prep calculators). */
 export async function setPlanStatus(planId: number, status: "draft" | "locked" | "ordered") {
   await prisma.weeklyPlan.update({ where: { id: planId }, data: { status } });
   revalidatePath("/plan");
-  revalidatePath("/prep");
+  revalidatePath("/schmear");
+  revalidatePath("/dough");
+  revalidatePath("/starter");
   revalidatePath("/");
 }
 
@@ -209,7 +219,9 @@ export async function updateFlavorPct(id: number, pct: number) {
   await prisma.flavor.update({ where: { id }, data: { pct: Math.max(0, pct || 0) } });
   revalidatePath("/settings");
   revalidatePath("/plan");
-  revalidatePath("/prep");
+  revalidatePath("/schmear");
+  revalidatePath("/dough");
+  revalidatePath("/starter");
 }
 
 /** CFG: update a single app setting (raw string/JSON value). */
@@ -218,7 +230,9 @@ export async function updateSetting(key: string, value: string) {
   revalidatePath("/settings");
   revalidatePath("/");
   revalidatePath("/plan");
-  revalidatePath("/prep");
+  revalidatePath("/schmear");
+  revalidatePath("/dough");
+  revalidatePath("/starter");
 }
 
 /** INV: update an ingredient's stock count and ordering fields. */
@@ -364,7 +378,9 @@ export async function applyFlavorMixFromSquare() {
   }
   revalidatePath("/settings");
   revalidatePath("/plan");
-  revalidatePath("/prep");
+  revalidatePath("/schmear");
+  revalidatePath("/dough");
+  revalidatePath("/starter");
   revalidatePath("/insights");
   const note =
     soldOutDates.size > 0 && clean.length > 0
@@ -391,7 +407,9 @@ export async function applySchmearMixFromSquare() {
     create: { key: "schmear_config", value: JSON.stringify({ ...config.schmear, types }) },
   });
   revalidatePath("/settings");
-  revalidatePath("/prep");
+  revalidatePath("/schmear");
+  revalidatePath("/dough");
+  revalidatePath("/starter");
   revalidatePath("/insights");
   return { ok: true };
 }
@@ -403,7 +421,9 @@ export async function clearSampleData() {
   revalidatePath("/");
   revalidatePath("/bake");
   revalidatePath("/plan");
-  revalidatePath("/prep");
+  revalidatePath("/schmear");
+  revalidatePath("/dough");
+  revalidatePath("/starter");
   return { removed };
 }
 
@@ -423,7 +443,9 @@ export async function resetToDefaults() {
   revalidatePath("/");
   revalidatePath("/bake");
   revalidatePath("/plan");
-  revalidatePath("/prep");
+  revalidatePath("/schmear");
+  revalidatePath("/dough");
+  revalidatePath("/starter");
   revalidatePath("/settings");
   return { ok: true };
 }

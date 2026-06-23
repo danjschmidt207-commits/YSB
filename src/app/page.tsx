@@ -153,7 +153,8 @@ export default async function Home({ searchParams }: { searchParams: { day?: str
           <div className="text-sm text-crust/60">{nextWeekBagels} bagels{nextPlan?.rotatorName ? ` · rotator: ${nextPlan.rotatorName}` : ""}</div>
           <div className="flex gap-3 text-sm">
             <Link href="/plan" className="text-crust/60 underline">Plan →</Link>
-            <Link href="/prep" className="text-crust/60 underline">Prep →</Link>
+            <Link href="/schmear" className="text-crust/60 underline">Schmear →</Link>
+            <Link href="/dough" className="text-crust/60 underline">Dough →</Link>
           </div>
         </div>
 
@@ -161,9 +162,9 @@ export default async function Home({ searchParams }: { searchParams: { day?: str
           <div className="label">Schmear order (next week)</div>
           {schmear ? (
             <>
-              <div className="text-2xl font-extrabold">{schmear.creamCheeseTotalLb.toFixed(0)} lb</div>
-              <div className="text-sm text-crust/60">Philadelphia cream cheese · {config.schmear.servingOz} oz/bagel</div>
-              <Link href="/prep" className="text-sm text-crust/60 underline">Schmear recipes →</Link>
+              <div className="text-2xl font-extrabold">{schmear.creamCheeseTotalBlocks} blocks</div>
+              <div className="text-sm text-crust/60">Philadelphia cream cheese ({schmear.creamCheeseTotalLb.toFixed(0)} lb) · {config.schmear.servingOz} oz/bagel</div>
+              <Link href="/schmear" className="text-sm text-crust/60 underline">Schmear recipes →</Link>
             </>
           ) : (
             <div className="text-sm text-crust/60">Plan next week to see schmear amounts.</div>
