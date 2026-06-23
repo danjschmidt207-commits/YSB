@@ -3,6 +3,12 @@
 // carries a quantity (e.g. a 6-box = "Everything × 2, Asiago × 3, Plain"). We emit one SaleLine
 // per modifier selection with its quantity, so multi-bagel boxes count correctly.
 //
+// IMPORTANT (Square semantics): an OrderLineItemModifier.quantity is the TOTAL quantity of that
+// modifier across the entire line item — Square has already multiplied it by the line quantity.
+// When the modifier quantity is unset, it defaults to the line item quantity. So we must NOT
+// multiply modifier.quantity by line.quantity again (that double-counts); we use the modifier
+// quantity directly and fall back to the line quantity only when the modifier quantity is absent.
+//
 // Real client uses a Personal Access Token (server-side env). When SQUARE_ACCESS_TOKEN is unset,
 // a mock generates realistic history so the import → attribute → insights flow is testable.
 
@@ -13,7 +19,7 @@ export interface SaleLine {
   soldAt: string; // ISO datetime
   itemName: string;
   modifier: string; // a single modifier name (a flavor, a schmear, or something to ignore)
-  qty: number; // modifier quantity × line quantity (number of bagels/tubs)
+  qty: number; // total quantity of this modifier on the line (number of bagels/tubs)
 }
 
 export function isSquareConfigured(): boolean {
@@ -82,12 +88,15 @@ export async function fetchSquareSales(startIso: string, endIso: string): Promis
         const lineUid = li.uid ?? Math.random().toString(36).slice(2);
         (li.modifiers ?? []).forEach((mod, i) => {
           if (!mod.name) return;
+          // Modifier quantity is already the total for the line; fall back to the line
+          // quantity only when Square omits it. Never multiply the two together.
+          const qty = mod.quantity != null ? intQty(mod.quantity) : lineQty;
           lines.push({
             uid: `${order.id}:${lineUid}:${i}`,
             soldAt,
             itemName: li.name ?? "Item",
             modifier: mod.name,
-            qty: intQty(mod.quantity) * lineQty,
+            qty,
           });
         });
       }
