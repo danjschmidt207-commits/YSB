@@ -11,7 +11,7 @@ import { applyDefaults, clearTransactional } from "@/lib/seedDefaults";
 import { DEFAULT_FLAVORS } from "@/lib/config";
 import { getConfig } from "@/lib/serverConfig";
 import { fetchSquareSales } from "@/lib/square";
-import { buildContext, attributeLine, IGNORE } from "@/lib/attribute";
+import { buildContext, attributeModifier, IGNORE } from "@/lib/attribute";
 
 /** Round shares (summing ~1) to integer percentages that total exactly 100 (largest remainder). */
 function toPct100(shares: { id: number | string; share: number }[]): Map<number | string, number> {
@@ -239,14 +239,17 @@ export async function importSquareSales(fromIso: string, toIso: string) {
   const unmapped = new Set<string>();
   let imported = 0;
   for (const line of lines) {
-    const att = attributeLine(line.modifierNames, ctx);
-    att.unmapped.forEach((u) => unmapped.add(u));
-    // Skip lines that aren't a bagel or schmear (e.g. coffee) so the data stays clean.
+    const att = attributeModifier(line.modifier, ctx);
+    if (!att.mapped) {
+      unmapped.add(line.modifier);
+      continue;
+    }
+    // Resolved-but-ignored (e.g. "None", coffee add-ons): don't store.
     if (att.flavorId == null && att.schmearKey == null) continue;
     const date = parseIsoDate(line.soldAt.slice(0, 10));
     await prisma.squareSale.upsert({
       where: { uid: line.uid },
-      update: { flavorId: att.flavorId, schmearKey: att.schmearKey },
+      update: { flavorId: att.flavorId, schmearKey: att.schmearKey, qty: line.qty },
       create: {
         uid: line.uid,
         soldAt: new Date(line.soldAt),
@@ -258,7 +261,7 @@ export async function importSquareSales(fromIso: string, toIso: string) {
         qty: line.qty,
       },
     });
-    imported++;
+    imported += line.qty;
   }
 
   await prisma.appSetting.upsert({
