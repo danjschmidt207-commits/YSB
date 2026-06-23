@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { getIngredients } from "@/lib/queries";
+import { DevBanner } from "@/components/DevBanner";
 import { StockRow } from "./InventoryClient";
 
 export const dynamic = "force-dynamic";
@@ -37,6 +38,7 @@ export default async function InventoryPage() {
 
   return (
     <div className="space-y-6">
+      <DevBanner name="Inventory" />
       <header className="flex items-end justify-between">
         <div>
           <h1 className="text-2xl font-extrabold">Inventory</h1>

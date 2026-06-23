@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { getPlanForWeek, getIngredients } from "@/lib/queries";
+import { DevBanner } from "@/components/DevBanner";
 import { getConfig } from "@/lib/serverConfig";
 import { appToday } from "@/lib/today";
 import { weekStartWednesday, addDays, shortLabel } from "@/lib/dates";
@@ -87,6 +88,7 @@ export default async function OrderPage() {
 
   return (
     <div className="space-y-6">
+      <DevBanner name="Order" />
       <header className="flex items-end justify-between">
         <div>
           <h1 className="text-2xl font-extrabold">Order</h1>

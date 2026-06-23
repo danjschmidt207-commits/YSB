@@ -1,9 +1,9 @@
 import Link from "next/link";
-import { getActiveFlavors, getBakeRecord, getRecentBakeRecords, getPlanForWeek } from "@/lib/queries";
+import { getActiveFlavors, getBakeRecord, getRecentBakeRecords, getDayPlan, getWeekDayPlans } from "@/lib/queries";
 import { getConfig } from "@/lib/serverConfig";
 import { appToday } from "@/lib/today";
-import { splitBagels } from "@/lib/calc";
-import { isoDate, shortLabel, DOW_SHORT, parseIsoDate, isOpenDay, dow, weekStartWednesday } from "@/lib/dates";
+import { isoDate, shortLabel, DOW_SHORT, parseIsoDate } from "@/lib/dates";
+import { DayBoards } from "@/components/DayBoards";
 import BakeEntryForm from "./BakeEntryForm";
 import DateNav from "./DateNav";
 
@@ -14,14 +14,16 @@ export default async function BakePage({ searchParams }: { searchParams: { date?
   const date = searchParams.date ? parseIsoDate(searchParams.date) : today;
   const dateIso = isoDate(date);
 
-  const [flavors, config, record, recent] = await Promise.all([
+  const [flavors, config, record, recent, dayPlan, weekDays] = await Promise.all([
     getActiveFlavors(),
     getConfig(),
     getBakeRecord(date),
     getRecentBakeRecords(15),
+    getDayPlan(date),
+    getWeekDayPlans(date),
   ]);
 
-  // Pre-fill baked from the existing record, else from the locked/draft plan's split for that day.
+  // Pre-fill baked from the existing record, else from the plan's flavor split for that day.
   const bakedMap: Record<number, number> = {};
   const leftoverMap: Record<number, number> = {};
   for (const f of flavors) {
@@ -34,16 +36,12 @@ export default async function BakePage({ searchParams }: { searchParams: { date?
       leftoverMap[l.flavorId] = Math.max(0, l.qtyBaked - l.qtySold);
     }
   } else {
-    const plan = await getPlanForWeek(weekStartWednesday(date));
-    const planDay = plan?.days.find((d) => isoDate(d.date) === dateIso);
-    if (planDay) {
-      const split = splitBagels(
-        planDay.plannedTotal,
-        flavors.map((f) => ({ flavorId: f.id, name: f.name, pct: f.pct }))
-      );
-      for (const s of split) bakedMap[s.flavorId] = s.qty;
-    }
+    for (const s of dayPlan.flavors) bakedMap[s.flavorId] = s.qty;
   }
+  const hasPlan = !record && dayPlan.hasPlan;
+
+  // The selected day large + highlighted; the rest of the week as small clickable cards.
+  const others = weekDays.filter((d) => d.dateIso !== dateIso);
 
   return (
     <div className="space-y-6">
@@ -57,14 +55,28 @@ export default async function BakePage({ searchParams }: { searchParams: { date?
         <DateNav dateIso={dateIso} />
       </header>
 
+      {/* Boil & season — selected day large, rest of week small */}
+      <section className="space-y-3">
+        <div className="flex items-baseline justify-between">
+          <h2 className="font-bold">Boil &amp; season</h2>
+          <span className="text-xs text-crust/50">24/board · ½-board steps</span>
+        </div>
+        <DayBoards day={dayPlan} size="lg" highlight />
+        {others.length > 0 && (
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+            {others.map((d) => (
+              <DayBoards key={d.dateIso} day={d} size="sm" href={`/bake?date=${d.dateIso}`} />
+            ))}
+          </div>
+        )}
+      </section>
+
       <section className="card space-y-4">
-        <p className="text-xs text-crust/50">
-          Enter how many you baked and how many were left at the end of the day. Sold is calculated for you.
-          Use the date picker above to record a past day.
-        </p>
+        <h2 className="font-bold">Enter results</h2>
         <BakeEntryForm
           dateIso={dateIso}
           flavors={flavors.map((f) => ({ id: f.id, name: f.name }))}
+          hasPlan={hasPlan}
           initial={{
             openTime: record?.retailOpenTime ?? config.openTime,
             closeTime: record?.retailCloseTime ?? config.closeTime,

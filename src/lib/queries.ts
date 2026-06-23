@@ -1,7 +1,8 @@
 import { prisma } from "./db";
-import { isoDate, zonedTimeHHMM } from "./dates";
+import { isoDate, zonedTimeHHMM, weekStartWednesday, openWeekDates, dow } from "./dates";
 import { inferSoldOutFromLastSale, type DayRecordInput } from "./forecast";
 import { RETAIL_TIMEZONE, SOLDOUT_INFERENCE } from "./config";
+import { splitBagels, boardsForBagels } from "./calc";
 
 export async function getActiveFlavors() {
   return prisma.flavor.findMany({ where: { active: true }, orderBy: { displayOrder: "asc" } });
@@ -153,4 +154,56 @@ export async function getPlanForWeek(weekStartDate: Date) {
     where: { weekStartDate },
     include: { days: { include: { lines: { include: { flavor: true } } }, orderBy: { date: "asc" } } },
   });
+}
+
+/** A single bake day's plan, split by flavor with half-board counts (for the boil & season cards). */
+export interface DayPlanPreview {
+  dateIso: string;
+  dow: number;
+  retail: number;
+  wholesale: number;
+  bakeTotal: number;
+  hasPlan: boolean;
+  rotatorName: string | null;
+  flavors: { flavorId: number; name: string; qty: number; boards: number }[];
+}
+
+function buildDayPreview(
+  date: Date,
+  flavors: { id: number; name: string; pct: number; isRotator: boolean }[],
+  plan: Awaited<ReturnType<typeof getPlanForWeek>>
+): DayPlanPreview {
+  const planDay = plan?.days.find((x) => isoDate(x.date) === isoDate(date));
+  const retail = planDay?.plannedTotal ?? 0;
+  const wholesale = planDay?.wholesaleExtra ?? 0;
+  const bakeTotal = retail + wholesale;
+  const pcts = flavors.map((f) => ({
+    flavorId: f.id,
+    name: f.isRotator && plan?.rotatorName ? plan.rotatorName : f.name,
+    pct: f.pct,
+  }));
+  const split = splitBagels(bakeTotal, pcts).map((s) => ({ ...s, boards: boardsForBagels(s.qty) }));
+  return {
+    dateIso: isoDate(date),
+    dow: dow(date),
+    retail,
+    wholesale,
+    bakeTotal,
+    hasPlan: !!planDay,
+    rotatorName: plan?.rotatorName ?? null,
+    flavors: split,
+  };
+}
+
+/** All five open days of the week containing `anyDate`, each split by flavor with board counts. */
+export async function getWeekDayPlans(anyDate: Date): Promise<DayPlanPreview[]> {
+  const wed = weekStartWednesday(anyDate);
+  const [flavors, plan] = await Promise.all([getActiveFlavors(), getPlanForWeek(wed)]);
+  return openWeekDates(wed).map((d) => buildDayPreview(d, flavors, plan));
+}
+
+/** One day's plan preview (loads the week containing the date). */
+export async function getDayPlan(date: Date): Promise<DayPlanPreview> {
+  const [flavors, plan] = await Promise.all([getActiveFlavors(), getPlanForWeek(weekStartWednesday(date))]);
+  return buildDayPreview(date, flavors, plan);
 }

@@ -1,22 +1,29 @@
 import Link from "next/link";
 import { prisma } from "@/lib/db";
-import { getBakeRecord, getPlanForWeek, getRecentBakeRecords } from "@/lib/queries";
+import { getBakeRecord, getPlanForWeek, getRecentBakeRecords, getDayPlan } from "@/lib/queries";
 import { getConfig } from "@/lib/serverConfig";
 import { appToday } from "@/lib/today";
 import { starterForBagels, weeklySchmear, g } from "@/lib/calc";
-import { addDays, dow, isoDate, shortLabel, weekStartWednesday, openWeekDates, isOpenDay, DOW_NAMES } from "@/lib/dates";
+import { DayBoards } from "@/components/DayBoards";
+import { addDays, dow, isoDate, shortLabel, weekStartWednesday, openWeekDates, isOpenDay, DOW_NAMES, parseIsoDate, prevOpenDay, nextOpenDay, thisOrNextOpenDay } from "@/lib/dates";
 
 export const dynamic = "force-dynamic";
 
-export default async function Home() {
+export default async function Home({ searchParams }: { searchParams: { day?: string } }) {
   const today = appToday();
   const config = await getConfig();
 
+  // Bake-day preview (step through open days with the arrows).
+  const previewDate = searchParams.day ? parseIsoDate(searchParams.day) : thisOrNextOpenDay(today);
+  const prev = prevOpenDay(previewDate);
+  const next = nextOpenDay(previewDate);
+
   const targetWed = addDays(weekStartWednesday(today), 7); // next week (being planned)
-  const [todayRec, recent, nextPlan] = await Promise.all([
+  const [todayRec, recent, nextPlan, previewPlan] = await Promise.all([
     getBakeRecord(today),
     getRecentBakeRecords(7),
     getPlanForWeek(targetWed),
+    getDayPlan(previewDate),
   ]);
 
   // Lock countdown to the next deadline weekday (Tuesday).
@@ -89,6 +96,24 @@ export default async function Home() {
           </div>
         </div>
       )}
+
+      {/* Bake-day preview — step through open days */}
+      <section className="space-y-2">
+        <div className="flex items-center justify-between">
+          <h2 className="font-bold">Bake day preview</h2>
+          <div className="flex items-center gap-1">
+            <Link href={`/?day=${isoDate(prev)}`} className="btn-ghost !px-2.5 !py-1" aria-label="Previous open day">←</Link>
+            <span className="min-w-[6.5rem] text-center text-sm font-semibold">
+              {DOW_NAMES[dow(previewDate)]} {isoDate(previewDate).slice(5)}
+            </span>
+            <Link href={`/?day=${isoDate(next)}`} className="btn-ghost !px-2.5 !py-1" aria-label="Next open day">→</Link>
+          </div>
+        </div>
+        <DayBoards day={previewPlan} size="lg" highlight={isoDate(previewDate) === isoDate(today)} />
+        <div className="flex justify-end">
+          <Link href={`/bake?date=${isoDate(previewDate)}`} className="text-sm text-crust/60 underline">Open in Bake →</Link>
+        </div>
+      </section>
 
       <section className="card space-y-3">
         <div className="flex items-center justify-between">

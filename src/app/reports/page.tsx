@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/db";
 import { getActiveFlavors } from "@/lib/queries";
+import { DevBanner } from "@/components/DevBanner";
 import { DOW_NAMES, OPEN_DOWS } from "@/lib/dates";
 
 export const dynamic = "force-dynamic";
@@ -58,6 +59,7 @@ export default async function ReportsPage() {
 
   return (
     <div className="space-y-6">
+      <DevBanner name="Reports" />
       <header>
         <h1 className="text-2xl font-extrabold">Reports</h1>
         <p className="text-sm text-crust/60">{records.length} days recorded · {overallST}% overall sell-through · {totalWaste} total leftover</p>

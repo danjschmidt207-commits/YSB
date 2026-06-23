@@ -75,6 +75,18 @@ export function nextOpenDay(d: Date): Date {
   return cur;
 }
 
+/** The previous open baking day strictly before `d` (skips Mon/Tue). */
+export function prevOpenDay(d: Date): Date {
+  let cur = addDays(d, -1);
+  while (!isOpenDay(dow(cur))) cur = addDays(cur, -1);
+  return cur;
+}
+
+/** `d` if it's an open day, otherwise the next open day. */
+export function thisOrNextOpenDay(d: Date): Date {
+  return isOpenDay(dow(d)) ? d : nextOpenDay(d);
+}
+
 /** Minutes between two "HH:MM" strings (close − open). Returns null if either missing. */
 export function windowMinutes(open?: string | null, close?: string | null): number | null {
   if (!open || !close) return null;

@@ -11,10 +11,12 @@ interface FlavorLite {
 export default function BakeEntryForm({
   dateIso,
   flavors,
+  hasPlan,
   initial,
 }: {
   dateIso: string;
   flavors: FlavorLite[];
+  hasPlan: boolean;
   initial: {
     openTime: string;
     closeTime: string;
@@ -32,6 +34,7 @@ export default function BakeEntryForm({
   const [notes, setNotes] = useState(initial.notes);
   const [soldOut, setSoldOut] = useState(initial.soldOut);
   const [soldOutTime, setSoldOutTime] = useState(initial.soldOutTime);
+  const [adjust, setAdjust] = useState(false);
   const [pending, start] = useTransition();
   const [saved, setSaved] = useState(false);
 
@@ -61,11 +64,23 @@ export default function BakeEntryForm({
 
   return (
     <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <p className="text-xs text-crust/50">
+          {hasPlan ? "Baked is pre-filled from the plan — just enter what's left over." : "No plan for this day — enter what you baked and what's left."}
+        </p>
+        <button
+          onClick={() => setAdjust((a) => !a)}
+          className={`pill ${adjust ? "bg-crust text-sesame" : "bg-crust/10 text-crust/60"}`}
+        >
+          {adjust ? "Done adjusting" : "Adjust baked"}
+        </button>
+      </div>
+
       <div className="overflow-hidden rounded-xl border border-crust/10">
         <div className="grid grid-cols-[1fr_auto_auto] gap-2 bg-crust/5 px-3 py-2 text-xs font-semibold uppercase tracking-wide text-crust/50">
           <span>Flavor</span>
           <span className="w-24 text-center">Baked</span>
-          <span className="w-20 text-center">Left</span>
+          <span className="w-24 text-center">Left</span>
         </div>
         {flavors.map((f) => {
           const sold = Math.max(0, (baked[f.id] || 0) - (leftover[f.id] || 0));
@@ -75,19 +90,23 @@ export default function BakeEntryForm({
                 <div className="font-semibold">{f.name}</div>
                 <div className="text-xs text-crust/50">sold {sold}</div>
               </div>
-              <input
-                type="number"
-                inputMode="numeric"
-                value={baked[f.id] || 0}
-                onChange={(e) => set("b", f.id, parseInt(e.target.value || "0", 10))}
-                className="h-10 w-24 rounded-lg border border-crust/20 text-center text-lg font-bold tabular-nums"
-              />
+              {adjust ? (
+                <input
+                  type="number"
+                  inputMode="numeric"
+                  value={baked[f.id] || 0}
+                  onChange={(e) => set("b", f.id, parseInt(e.target.value || "0", 10))}
+                  className="h-10 w-24 rounded-lg border border-crust/20 text-center text-lg font-bold tabular-nums"
+                />
+              ) : (
+                <div className="w-24 text-center text-lg font-bold tabular-nums text-crust/70">{baked[f.id] || 0}</div>
+              )}
               <input
                 type="number"
                 inputMode="numeric"
                 value={leftover[f.id] || 0}
                 onChange={(e) => set("l", f.id, parseInt(e.target.value || "0", 10))}
-                className="h-10 w-20 rounded-lg border border-crust/20 text-center tabular-nums"
+                className="h-10 w-24 rounded-lg border-2 border-crust/30 text-center text-lg font-bold tabular-nums focus:border-crust"
               />
             </div>
           );
@@ -113,16 +132,18 @@ export default function BakeEntryForm({
         )}
       </div>
 
-      <div className="grid grid-cols-2 gap-3">
-        <label className="block">
-          <span className="label">Open</span>
-          <input type="time" value={openTime} onChange={(e) => { setOpenTime(e.target.value); setSaved(false); }} className="mt-1 w-full rounded-lg border border-crust/20 px-3 py-2" />
-        </label>
-        <label className="block">
-          <span className="label">Close</span>
-          <input type="time" value={closeTime} onChange={(e) => { setCloseTime(e.target.value); setSaved(false); }} className="mt-1 w-full rounded-lg border border-crust/20 px-3 py-2" />
-        </label>
-      </div>
+      {adjust && (
+        <div className="grid grid-cols-2 gap-3">
+          <label className="block">
+            <span className="label">Open</span>
+            <input type="time" value={openTime} onChange={(e) => { setOpenTime(e.target.value); setSaved(false); }} className="mt-1 w-full rounded-lg border border-crust/20 px-3 py-2" />
+          </label>
+          <label className="block">
+            <span className="label">Close</span>
+            <input type="time" value={closeTime} onChange={(e) => { setCloseTime(e.target.value); setSaved(false); }} className="mt-1 w-full rounded-lg border border-crust/20 px-3 py-2" />
+          </label>
+        </div>
+      )}
 
       <label className="block">
         <span className="label">Notes (weather, events, closures)</span>

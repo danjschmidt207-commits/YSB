@@ -1,16 +1,16 @@
 import Link from "next/link";
-import { getPlanForWeek, getActiveFlavors } from "@/lib/queries";
+import { getPlanForWeek } from "@/lib/queries";
 import { getConfig } from "@/lib/serverConfig";
 import { appToday } from "@/lib/today";
 import { weekStartWednesday, addDays, isoDate, shortLabel, DOW_NAMES, DOW_SHORT } from "@/lib/dates";
-import { doughForBagels, starterForBagels, weeklySchmear, splitBagels, boardsForBagels, formatBoards, BOARD_BAGELS, g, lb, gLb, type FlavorPct } from "@/lib/calc";
+import { doughForBagels, starterForBagels, weeklySchmear, g, lb, gLb } from "@/lib/calc";
 
 export const dynamic = "force-dynamic";
 
 export default async function PrepPage() {
   const today = appToday();
   const targetWed = addDays(weekStartWednesday(today), 7);
-  const [plan, config, flavors] = await Promise.all([getPlanForWeek(targetWed), getConfig(), getActiveFlavors()]);
+  const [plan, config] = await Promise.all([getPlanForWeek(targetWed), getConfig()]);
 
   if (!plan) {
     return (
@@ -47,20 +47,6 @@ export default async function PrepPage() {
   const weeklyWholesale = days.reduce((s, d) => s + d.wholesale, 0);
   const schmear = weeklySchmear(weeklyRetail, config.schmear);
 
-  // Boil & season guide: per bake day, the full bake split by flavor, shown in half-board steps
-  // (a board = 24 bagels; you boil and season a board at a time).
-  const flavorPcts: FlavorPct[] = flavors.map((f) => ({
-    flavorId: f.id,
-    name: f.isRotator && plan.rotatorName ? plan.rotatorName : f.name,
-    pct: f.pct,
-  }));
-  const boilDays = days.map((d) => ({
-    dow: d.dow,
-    date: d.date,
-    bagels: d.bagels,
-    flavors: splitBagels(d.bagels, flavorPcts).map((s) => ({ ...s, boards: boardsForBagels(s.qty) })),
-  }));
-
   // Weekly ordering totals.
   const doughFlour = days.reduce((s, d) => s + d.dough.flourG, 0);
   const feedFlour = days.reduce((s, d) => s + d.starter.flourG, 0);
@@ -89,38 +75,6 @@ export default async function PrepPage() {
         <Kpi label="Honey" value={lb(honey)} sub={g(honey)} />
         <Kpi label="Cream cheese" value={`${schmear.creamCheeseTotalBlocks} blocks`} sub={`${schmear.creamCheeseTotalLb.toFixed(0)} lb · 3-lb blocks`} />
         <Kpi label="Salt (dough)" value={g(salt)} sub="" />
-      </section>
-
-      {/* Boil & season — per day, by board */}
-      <section className="card space-y-3">
-        <div className="flex items-center justify-between">
-          <h2 className="font-bold">Boil &amp; season (by board)</h2>
-          <span className="text-xs text-crust/50">{BOARD_BAGELS}/board · ½-board steps</span>
-        </div>
-        <p className="text-xs text-crust/50">
-          Boil and season a board at a time. Each bake day&apos;s full bake (retail + wholesale) split by flavor, in half boards.
-        </p>
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-          {boilDays.map((d) => (
-            <div key={d.dow} className="rounded-xl border border-crust/10 p-3">
-              <div className="mb-1 flex items-center justify-between">
-                <span className="font-semibold">{DOW_NAMES[d.dow]}</span>
-                <span className="text-xs text-crust/50">{d.bagels} bagels · {formatBoards(boardsForBagels(d.bagels))} boards</span>
-              </div>
-              <table className="w-full text-sm">
-                <tbody>
-                  {d.flavors.map((f) => (
-                    <tr key={f.flavorId} className="border-t border-crust/5">
-                      <td className="py-1 text-crust/70">{f.name}</td>
-                      <td className="py-1 text-right font-semibold tabular-nums">{formatBoards(f.boards)} <span className="font-normal text-crust/40">boards</span></td>
-                      <td className="py-1 text-right text-xs text-crust/40 tabular-nums">{f.qty}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          ))}
-        </div>
       </section>
 
       {/* Schmear prep — Tuesday */}

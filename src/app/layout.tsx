@@ -7,16 +7,21 @@ export const metadata: Metadata = {
   description: "Plan the week, calculate prep, order ingredients, and learn from your sales.",
 };
 
+// Production-ready tools.
 const NAV = [
   { href: "/", label: "Home" },
   { href: "/bake", label: "Bake" },
   { href: "/plan", label: "Plan" },
   { href: "/prep", label: "Prep" },
+  { href: "/insights", label: "Insights" },
+  { href: "/settings", label: "Settings" },
+];
+
+// Not yet production-ready — grouped separately and labelled.
+const NAV_DEV = [
   { href: "/inventory", label: "Inventory" },
   { href: "/order", label: "Order" },
   { href: "/reports", label: "Reports" },
-  { href: "/insights", label: "Insights" },
-  { href: "/settings", label: "Settings" },
 ];
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
@@ -32,12 +37,24 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
               </Link>
               <span className="pill bg-crust/10 text-crust/60">Phase 1</span>
             </div>
-            <nav className="flex flex-wrap gap-1 px-2 pb-2">
+            <nav className="flex flex-wrap items-center gap-1 px-2 pb-2">
               {NAV.map((n) => (
                 <Link
                   key={n.href}
                   href={n.href}
                   className="rounded-lg px-3 py-1.5 text-sm font-semibold text-crust/70 hover:bg-crust/5"
+                >
+                  {n.label}
+                </Link>
+              ))}
+              <span className="mx-1 hidden h-5 w-px bg-crust/15 sm:inline-block" aria-hidden />
+              <span className="pill bg-crust/5 text-[10px] uppercase tracking-wide text-crust/40">In dev</span>
+              {NAV_DEV.map((n) => (
+                <Link
+                  key={n.href}
+                  href={n.href}
+                  className="rounded-lg px-3 py-1.5 text-sm font-medium text-crust/40 hover:bg-crust/5"
+                  title="In development — not production ready"
                 >
                   {n.label}
                 </Link>
