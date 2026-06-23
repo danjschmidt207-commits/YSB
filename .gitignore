@@ -13,3 +13,6 @@ prisma/dev.db-journal
 # Next.js generated
 next-env.d.ts
 .next/
+
+# TypeScript incremental build info
+*.tsbuildinfo
