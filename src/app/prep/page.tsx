@@ -27,16 +27,25 @@ export default async function PrepPage() {
     );
   }
 
-  const days = plan.days.map((d) => ({
-    date: d.date,
-    dow: d.dayOfWeek,
-    bagels: d.plannedTotal,
-    dough: doughForBagels(d.plannedTotal, config.dough),
-    starter: starterForBagels(d.plannedTotal, config.dough, config.starter),
-  }));
+  // Dough/starter are calculated from everything baked (retail + wholesale). Schmear is retail-only
+  // (wholesale orders are bagels without schmear).
+  const days = plan.days.map((d) => {
+    const bake = d.plannedTotal + d.wholesaleExtra;
+    return {
+      date: d.date,
+      dow: d.dayOfWeek,
+      retail: d.plannedTotal,
+      wholesale: d.wholesaleExtra,
+      bagels: bake,
+      dough: doughForBagels(bake, config.dough),
+      starter: starterForBagels(bake, config.dough, config.starter),
+    };
+  });
 
   const weeklyBagels = days.reduce((s, d) => s + d.bagels, 0);
-  const schmear = weeklySchmear(weeklyBagels, config.schmear);
+  const weeklyRetail = days.reduce((s, d) => s + d.retail, 0);
+  const weeklyWholesale = days.reduce((s, d) => s + d.wholesale, 0);
+  const schmear = weeklySchmear(weeklyRetail, config.schmear);
 
   // Weekly ordering totals.
   const doughFlour = days.reduce((s, d) => s + d.dough.flourG, 0);
@@ -51,7 +60,8 @@ export default async function PrepPage() {
         <div>
           <h1 className="text-2xl font-extrabold">Prep</h1>
           <p className="text-sm text-crust/60">
-            Week of {shortLabel(targetWed)} · {weeklyBagels} bagels · plan {plan.status}
+            Week of {shortLabel(targetWed)} · {weeklyBagels} bagels to bake
+            {weeklyWholesale > 0 && ` (${weeklyRetail} retail + ${weeklyWholesale} wholesale)`} · plan {plan.status}
           </p>
         </div>
         <Link href="/plan" className="text-sm text-crust/60 underline">

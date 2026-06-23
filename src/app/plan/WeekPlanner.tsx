@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useState, useTransition } from "react";
-import { generatePlan, savePlanDayTotal, setPlanStatus, setRotatorName } from "@/app/actions";
+import { generatePlan, savePlanDayTotal, savePlanDayWholesale, setPlanStatus, setRotatorName } from "@/app/actions";
 import { splitBagels, type FlavorPct } from "@/lib/calc";
 
 interface DayDto {
@@ -12,6 +12,7 @@ interface DayDto {
   dowName: string;
   recommendedTotal: number;
   plannedTotal: number;
+  wholesaleExtra: number;
 }
 export interface PlanDto {
   id: number;
@@ -50,14 +51,19 @@ export default function WeekPlanner({
   const displayFlavors: FlavorPct[] = flavors.map((f) =>
     /rotator/i.test(f.name) && plan.rotatorName ? { ...f, name: plan.rotatorName } : f
   );
-  const weekTotal = plan.days.reduce((s, d) => s + d.plannedTotal, 0);
+  const weekRetail = plan.days.reduce((s, d) => s + d.plannedTotal, 0);
+  const weekWholesale = plan.days.reduce((s, d) => s + d.wholesaleExtra, 0);
+  const weekTotal = weekRetail + weekWholesale;
 
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="flex items-center gap-2">
           <StatusPill status={plan.status} />
-          <span className="text-sm text-crust/60">Week of {weekLabel} · {weekTotal} bagels</span>
+          <span className="text-sm text-crust/60">
+            Week of {weekLabel} · {weekTotal} to bake
+            {weekWholesale > 0 && <span className="text-crust/45"> ({weekRetail} retail + {weekWholesale} wholesale)</span>}
+          </span>
         </div>
         <div className="flex gap-2">
           {!locked && (
@@ -114,9 +120,11 @@ function RotatorField({ planId, initial, locked }: { planId: number; initial: st
 
 function DayCard({ day, flavors, locked }: { day: DayDto; flavors: FlavorPct[]; locked: boolean }) {
   const [total, setTotal] = useState(day.plannedTotal);
+  const [wholesale, setWholesale] = useState(day.wholesaleExtra);
   const [pending, start] = useTransition();
   const split = splitBagels(total, flavors);
   const delta = total - day.recommendedTotal;
+  const bakeTotal = total + wholesale;
 
   return (
     <div className="card space-y-2">
@@ -138,7 +146,7 @@ function DayCard({ day, flavors, locked }: { day: DayDto; flavors: FlavorPct[]; 
           className="h-11 w-24 rounded-lg border border-crust/20 text-center text-xl font-bold tabular-nums disabled:bg-crust/5"
         />
         <div className="text-xs text-crust/50">
-          total bagels
+          retail bagels
           <div className={delta === 0 ? "text-crust/40" : delta > 0 ? "text-amber-600" : "text-blue-600"}>
             {delta === 0 ? "= forecast" : `${delta > 0 ? "+" : ""}${delta} vs ${day.recommendedTotal}`}
           </div>
@@ -146,7 +154,24 @@ function DayCard({ day, flavors, locked }: { day: DayDto; flavors: FlavorPct[]; 
         {pending && <span className="text-xs text-crust/40">…</span>}
       </div>
 
+      <div className="flex items-center gap-2">
+        <input
+          type="number"
+          inputMode="numeric"
+          disabled={locked}
+          value={wholesale}
+          onChange={(e) => setWholesale(Math.max(0, parseInt(e.target.value || "0", 10)))}
+          onBlur={() => wholesale !== day.wholesaleExtra && start(() => savePlanDayWholesale(day.id, wholesale).then(() => {}))}
+          className="h-9 w-20 rounded-lg border border-crust/20 text-center text-base font-semibold tabular-nums disabled:bg-crust/5"
+        />
+        <div className="text-xs text-crust/50">
+          + wholesale extra
+          <div className="font-semibold text-crust/70">bake {bakeTotal} total</div>
+        </div>
+      </div>
+
       <div className="border-t border-crust/10 pt-1 text-sm">
+        <div className="mb-0.5 text-xs font-medium text-crust/45">Retail flavor split</div>
         {split.map((s) => (
           <div key={s.flavorId} className="flex justify-between text-crust/70">
             <span>{s.name}</span>

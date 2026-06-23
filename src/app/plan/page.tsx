@@ -25,6 +25,7 @@ export default async function PlanPage() {
           dowName: DOW_NAMES[d.dayOfWeek],
           recommendedTotal: d.recommendedTotal,
           plannedTotal: d.plannedTotal,
+          wholesaleExtra: d.wholesaleExtra,
         })),
       }
     : null;

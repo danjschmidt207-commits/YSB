@@ -2,13 +2,13 @@
 
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/db";
-import { parseIsoDate, dow, openWeekDates, isoDate } from "@/lib/dates";
+import { parseIsoDate, dow, openWeekDates, isoDate, zonedDateISO } from "@/lib/dates";
 import { forecastWeekday } from "@/lib/forecast";
 import { getSettings } from "@/lib/settings";
-import { loadWeekdayHistory } from "@/lib/queries";
+import { loadWeekdayHistory, loadSoldOutDates } from "@/lib/queries";
 import { splitBagels, type FlavorPct } from "@/lib/calc";
 import { applyDefaults, clearTransactional } from "@/lib/seedDefaults";
-import { DEFAULT_FLAVORS } from "@/lib/config";
+import { DEFAULT_FLAVORS, RETAIL_TIMEZONE } from "@/lib/config";
 import { getConfig } from "@/lib/serverConfig";
 import { fetchSquareSales } from "@/lib/square";
 import { buildContext, attributeModifier, IGNORE } from "@/lib/attribute";
@@ -117,7 +117,13 @@ export async function generatePlan(weekStartIso: string, rotatorName?: string) {
     return { ok: false, message: "This week is already ordered and can't be regenerated." };
   }
   const keepRotator = rotatorName ?? existing?.rotatorName ?? null;
-  if (existing) await prisma.weeklyPlan.delete({ where: { id: existing.id } });
+  // Preserve any wholesale extras set on the prior plan (keyed by date) across a re-forecast.
+  const priorWholesale = new Map<string, number>();
+  if (existing) {
+    const days = await prisma.weeklyPlanDay.findMany({ where: { weeklyPlanId: existing.id } });
+    for (const d of days) priorWholesale.set(isoDate(d.date), d.wholesaleExtra);
+    await prisma.weeklyPlan.delete({ where: { id: existing.id } });
+  }
 
   const plan = await prisma.weeklyPlan.create({
     data: { weekStartDate: weekWed, status: "draft", rotatorName: keepRotator, createdBy: "app" },
@@ -133,6 +139,7 @@ export async function generatePlan(weekStartIso: string, rotatorName?: string) {
         dayOfWeek: dow(date),
         plannedTotal: fc.recommendedTotal,
         recommendedTotal: fc.recommendedTotal,
+        wholesaleExtra: priorWholesale.get(isoDate(date)) ?? 0,
       },
     });
     for (const s of splitBagels(fc.recommendedTotal, pcts)) {
@@ -160,6 +167,16 @@ export async function savePlanDayTotal(planDayId: number, total: number) {
       data: { plannedQty: qty },
     });
   }
+  revalidatePath("/plan");
+  revalidatePath("/prep");
+}
+
+/** PLN: set a day's extra wholesale bake (added on top of retail for dough/prep totals). */
+export async function savePlanDayWholesale(planDayId: number, qty: number) {
+  await prisma.weeklyPlanDay.update({
+    where: { id: planDayId },
+    data: { wholesaleExtra: Math.max(0, qty || 0) },
+  });
   revalidatePath("/plan");
   revalidatePath("/prep");
 }
@@ -251,7 +268,9 @@ export async function importSquareSales(fromIso: string, toIso: string) {
     }
     // Resolved-but-ignored (e.g. "None", coffee add-ons): don't store.
     if (att.flavorId == null && att.schmearKey == null) continue;
-    const date = parseIsoDate(line.soldAt.slice(0, 10));
+    // Bucket by the shop's LOCAL calendar day (Square stamps orders in UTC), so morning sales
+    // near the UTC date boundary land on the correct day.
+    const date = parseIsoDate(zonedDateISO(new Date(line.soldAt), RETAIL_TIMEZONE));
     await prisma.squareSale.upsert({
       where: { uid: line.uid },
       update: { flavorId: att.flavorId, schmearKey: att.schmearKey, qty: line.qty },
@@ -316,16 +335,30 @@ async function mergeOverrides(patch: Record<string, number | string>) {
   });
 }
 
-/** INSIGHTS: set each flavor's % from the imported Square flavor mix. */
+/**
+ * INSIGHTS: set each flavor's % from the Square flavor mix — using ONLY days that did NOT sell out.
+ * On a sell-out day the mix just mirrors what was baked (many customers couldn't get their first
+ * pick), so those days don't reveal true preference. If every day sold out (no clean signal), we
+ * fall back to all days so the action still works.
+ */
 export async function applyFlavorMixFromSquare() {
+  const soldOutDates = await loadSoldOutDates();
   const grouped = await prisma.squareSale.groupBy({
-    by: ["flavorId"],
+    by: ["flavorId", "date"],
     where: { flavorId: { not: null } },
     _sum: { qty: true },
   });
-  const total = grouped.reduce((s, g) => s + (g._sum.qty ?? 0), 0);
+  const sum = (rows: typeof grouped) => {
+    const byFlavor = new Map<number, number>();
+    for (const g of rows) byFlavor.set(g.flavorId as number, (byFlavor.get(g.flavorId as number) ?? 0) + (g._sum.qty ?? 0));
+    return byFlavor;
+  };
+  const clean = grouped.filter((g) => !soldOutDates.has(isoDate(g.date)));
+  const byFlavor = clean.length > 0 ? sum(clean) : sum(grouped);
+  const total = [...byFlavor.values()].reduce((s, v) => s + v, 0);
   if (total === 0) return { ok: false, message: "No attributed Square sales yet." };
-  const pcts = toPct100(grouped.map((g) => ({ id: g.flavorId as number, share: (g._sum.qty ?? 0) / total })));
+
+  const pcts = toPct100([...byFlavor].map(([id, qty]) => ({ id, share: qty / total })));
   for (const [flavorId, pct] of pcts) {
     await prisma.flavor.update({ where: { id: flavorId as number }, data: { pct } });
   }
@@ -333,7 +366,11 @@ export async function applyFlavorMixFromSquare() {
   revalidatePath("/plan");
   revalidatePath("/prep");
   revalidatePath("/insights");
-  return { ok: true };
+  const note =
+    soldOutDates.size > 0 && clean.length > 0
+      ? `Set from ${[...new Set(clean.map((g) => isoDate(g.date)))].length} non-sold-out days (excluded ${soldOutDates.size} sell-out days, whose mix reflects what was baked).`
+      : "Set from all imported days.";
+  return { ok: true, message: note };
 }
 
 /** INSIGHTS: set each schmear type's % from the imported Square schmear mix. */

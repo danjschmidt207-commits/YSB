@@ -90,6 +90,11 @@ export default async function WeekdayDetail({ params }: { params: { dow: string 
                     <Link href={`/bake/${r.date}`} className="underline-offset-2 hover:underline">
                       {DOW_SHORT[dw]} {r.date.slice(5)}
                     </Link>
+                    {r.source === "square" && (
+                      <span className="ml-1 align-middle text-[10px] uppercase tracking-wide text-crust/40" title="Reconstructed from Square sales; sold-out inferred from the last sale time">
+                        ·sq
+                      </span>
+                    )}
                   </td>
                   <td className="td text-right">{r.baked}</td>
                   <td className="td text-right">{r.sold}</td>
@@ -116,6 +121,8 @@ export default async function WeekdayDetail({ params }: { params: { dow: string 
         <p className="text-xs text-crust/50">
           *On sold-out days, sold is only a floor on demand. <span className="text-red-600">True demand↑</span> de-censors it
           using the sell-out time and a front-loaded intraday curve (spec §7). Recent weeks weigh more.
+          Rows marked <span className="uppercase">·sq</span> predate bake tracking and are reconstructed from Square sales —
+          sold-out is inferred when the day&apos;s last sale landed well before the noon close. Enter a bake record for any day to override it.
         </p>
       </section>
     </div>

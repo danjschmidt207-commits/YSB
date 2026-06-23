@@ -52,6 +52,8 @@ export interface DayRecordInput {
   soldOutTime?: string | null;
   openTime?: string | null;
   closeTime?: string | null;
+  /** Where the record came from: a manual bake entry, or reconstructed from Square sales. */
+  source?: "manual" | "square";
   flavors: FlavorRecordInput[];
 }
 
@@ -101,6 +103,22 @@ export function deCensorDemand(
 
 function clamp(x: number, lo: number, hi: number): number {
   return Math.max(lo, Math.min(hi, x));
+}
+
+/**
+ * Infer whether a day sold out from the time of its LAST sale (used for historical days that
+ * predate bake tracking). If the last sale landed `gapMin` minutes or more before close, the shop
+ * almost certainly ran out of bagels rather than coasting to closing time. Returns the inference
+ * plus the sell-out time (= last sale) to feed the de-censoring curve.
+ */
+export function inferSoldOutFromLastSale(
+  lastSaleHHMM: string | null,
+  closeHHMM: string,
+  gapMin: number
+): { soldOut: boolean; soldOutTime: string | null } {
+  if (!lastSaleHHMM) return { soldOut: false, soldOutTime: null };
+  const gap = hhmmToMin(closeHHMM) - hhmmToMin(lastSaleHHMM);
+  return gap >= gapMin ? { soldOut: true, soldOutTime: lastSaleHHMM } : { soldOut: false, soldOutTime: null };
 }
 
 /** Fraction of the retail window elapsed when a sell-out occurred, or null if not derivable. */
@@ -161,6 +179,7 @@ export interface RecordAnalysis {
   censored: boolean;
   method: string;
   weight: number;
+  source: "manual" | "square";
 }
 
 export interface FlavorRecommendation {
@@ -217,6 +236,7 @@ export function forecastWeekday(records: DayRecordInput[], cfg: ForecastConfig =
       censored: dc.censored,
       method: dc.method,
       weight: Math.pow(cfg.recencyDecay, idx), // idx 0 = newest = weight 1
+      source: r.source ?? "manual",
     };
   });
 

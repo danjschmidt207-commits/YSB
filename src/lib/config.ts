@@ -5,6 +5,20 @@
 export const LB = 453.59237; // grams per pound
 export const OZ = 28.349523; // grams per ounce
 
+/** The shop's wall-clock timezone. Square timestamps are UTC; we bucket sales by this local day. */
+export const RETAIL_TIMEZONE = "America/Denver"; // Mountain Time
+
+/**
+ * Defaults for inferring "sold out" on historical days that predate bake tracking, from Square
+ * sales alone: the shop was open 08:00–12:00 (noon). If the last sale of the day landed this many
+ * minutes (or more) before close, we treat the day as a sell-out (demand was censored).
+ */
+export const SOLDOUT_INFERENCE = {
+  openTime: "08:00",
+  closeTime: "12:00",
+  gapMinutes: 20,
+};
+
 /** Dough recipe as parts (a ratio). flour:starter:water:honey:salt. bagelWeightG = dough per bagel. */
 export interface DoughRecipe {
   flour: number;

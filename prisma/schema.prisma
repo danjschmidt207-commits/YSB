@@ -117,8 +117,9 @@ model WeeklyPlanDay {
   weeklyPlanId     Int
   date             DateTime
   dayOfWeek        Int
-  plannedTotal     Int      @default(0)
+  plannedTotal     Int      @default(0) // retail bagels (forecasted demand)
   recommendedTotal Int      @default(0)
+  wholesaleExtra   Int      @default(0) // extra bagels baked for wholesale orders, on top of retail
 
   plan  WeeklyPlan          @relation(fields: [weeklyPlanId], references: [id], onDelete: Cascade)
   lines WeeklyPlanDayLine[]

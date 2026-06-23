@@ -12,7 +12,7 @@ export function ApplyMixButton({ kind, label }: { kind: "flavor" | "schmear"; la
         onClick={() =>
           start(async () => {
             const r = kind === "flavor" ? await applyFlavorMixFromSquare() : await applySchmearMixFromSquare();
-            setMsg(r.ok ? "Applied ✓" : r.message ?? "Nothing to apply");
+            setMsg(r.ok ? r.message ?? "Applied ✓" : r.message ?? "Nothing to apply");
           })
         }
         disabled={pending}

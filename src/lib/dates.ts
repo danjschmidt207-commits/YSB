@@ -86,6 +86,27 @@ export function hhmmToMin(s: string): number {
   return h * 60 + m;
 }
 
+/** Calendar date (YYYY-MM-DD) of an instant as seen in a given IANA timezone. */
+export function zonedDateISO(instant: Date, timeZone: string): string {
+  // en-CA formats as YYYY-MM-DD.
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(instant);
+}
+
+/** Wall-clock time (HH:MM, 24h) of an instant as seen in a given IANA timezone. */
+export function zonedTimeHHMM(instant: Date, timeZone: string): string {
+  return new Intl.DateTimeFormat("en-GB", {
+    timeZone,
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+  }).format(instant);
+}
+
 export function minToHhmm(min: number): string {
   const h = Math.floor(min / 60);
   const m = Math.round(min % 60);
