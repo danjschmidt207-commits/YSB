@@ -22,6 +22,18 @@ export interface SaleLine {
   qty: number; // total quantity of this modifier on the line (number of bagels/tubs)
 }
 
+/**
+ * Structural diagnostic captured during a real import — quantities only, no customer/payment
+ * data. Lets us see exactly how Square nests line_item.quantity vs modifier.quantity so we count
+ * boxes correctly. Surfaced in the Settings → Square panel.
+ */
+export interface ImportDiag {
+  source: string;
+  lineQtyHist: Record<string, number>; // line_item.quantity -> how many lines
+  modQtyHist: Record<string, number>; // modifier.quantity (as sent, "∅" if unset) -> how many modifiers
+  sampleLines: { item: string; lineQty: string; mods: { name: string; qty: string }[] }[];
+}
+
 export function isSquareConfigured(): boolean {
   return Boolean(process.env.SQUARE_ACCESS_TOKEN && process.env.SQUARE_LOCATION_ID);
 }
@@ -43,15 +55,23 @@ function intQty(v: string | undefined): number {
 }
 
 /** Fetch completed-order sale lines between two ISO dates (inclusive). Mock when unconfigured. */
-export async function fetchSquareSales(startIso: string, endIso: string): Promise<{ source: string; lines: SaleLine[] }> {
+export async function fetchSquareSales(
+  startIso: string,
+  endIso: string
+): Promise<{ source: string; lines: SaleLine[]; diag: ImportDiag }> {
   if (!isSquareConfigured()) {
-    return { source: "mock", lines: mockSales(startIso, endIso) };
+    return {
+      source: "mock",
+      lines: mockSales(startIso, endIso),
+      diag: { source: "mock", lineQtyHist: {}, modQtyHist: {}, sampleLines: [] },
+    };
   }
   const token = process.env.SQUARE_ACCESS_TOKEN!;
   const locationId = process.env.SQUARE_LOCATION_ID!;
   const start = new Date(startIso + "T00:00:00.000Z").toISOString();
   const end = new Date(endIso + "T23:59:59.999Z").toISOString();
 
+  const diag: ImportDiag = { source: squareEnvLabel(), lineQtyHist: {}, modQtyHist: {}, sampleLines: [] };
   const lines: SaleLine[] = [];
   let cursor: string | undefined;
   do {
@@ -86,6 +106,22 @@ export async function fetchSquareSales(startIso: string, endIso: string): Promis
       for (const li of order.line_items ?? []) {
         const lineQty = intQty(li.quantity);
         const lineUid = li.uid ?? Math.random().toString(36).slice(2);
+
+        // --- structural diagnostic (quantities only) ---
+        const lqKey = String(li.quantity ?? "∅");
+        diag.lineQtyHist[lqKey] = (diag.lineQtyHist[lqKey] ?? 0) + 1;
+        for (const mod of li.modifiers ?? []) {
+          const mqKey = mod.quantity == null ? "∅" : String(mod.quantity);
+          diag.modQtyHist[mqKey] = (diag.modQtyHist[mqKey] ?? 0) + 1;
+        }
+        if (diag.sampleLines.length < 12 && (li.modifiers ?? []).length > 0) {
+          diag.sampleLines.push({
+            item: li.name ?? "Item",
+            lineQty: String(li.quantity ?? "∅"),
+            mods: (li.modifiers ?? []).map((m) => ({ name: m.name ?? "?", qty: String(m.quantity ?? "∅") })),
+          });
+        }
+
         (li.modifiers ?? []).forEach((mod, i) => {
           if (!mod.name) return;
           // Modifier quantity is already the total for the line; fall back to the line
@@ -104,7 +140,7 @@ export async function fetchSquareSales(startIso: string, endIso: string): Promis
     cursor = data.cursor;
   } while (cursor);
 
-  return { source: squareEnvLabel(), lines };
+  return { source: squareEnvLabel(), lines, diag };
 }
 
 interface SquareOrdersResponse {

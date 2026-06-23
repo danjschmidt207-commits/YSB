@@ -223,7 +223,7 @@ export async function updateIngredient(
 
 /** SQUARE: import completed sales for a date range and attribute each line to a flavor/schmear. */
 export async function importSquareSales(fromIso: string, toIso: string) {
-  const { source, lines } = await fetchSquareSales(fromIso, toIso);
+  const { source, lines, diag } = await fetchSquareSales(fromIso, toIso);
   const [flavors, config, overrideRow] = await Promise.all([
     prisma.flavor.findMany({ where: { active: true } }),
     getConfig(),
@@ -275,9 +275,17 @@ export async function importSquareSales(fromIso: string, toIso: string) {
     create: { key: "square_unmapped", value: JSON.stringify([...unmapped]) },
   });
 
+  // Persist the structural diagnostic so it can be inspected in Settings.
+  const rows = lines.length;
+  await prisma.appSetting.upsert({
+    where: { key: "square_diag" },
+    update: { value: JSON.stringify({ ...diag, rows, imported }) },
+    create: { key: "square_diag", value: JSON.stringify({ ...diag, rows, imported }) },
+  });
+
   revalidatePath("/insights");
   revalidatePath("/settings");
-  return { ok: true, source, imported, unmapped: [...unmapped] };
+  return { ok: true, source, imported, unmapped: [...unmapped], diag };
 }
 
 /**

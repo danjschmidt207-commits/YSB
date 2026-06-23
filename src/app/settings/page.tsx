@@ -8,19 +8,21 @@ import { SquareSection } from "./SquareClient";
 export const dynamic = "force-dynamic";
 
 export default async function SettingsPage() {
-  const [flavors, config, unmappedRow] = await Promise.all([
+  const [flavors, config, unmappedRow, diagRow] = await Promise.all([
     prisma.flavor.findMany({ orderBy: { displayOrder: "asc" } }),
     getConfig(),
     prisma.appSetting.findUnique({ where: { key: "square_unmapped" } }),
+    prisma.appSetting.findUnique({ where: { key: "square_diag" } }),
   ]);
   const pctSum = flavors.filter((f) => f.active).reduce((s, f) => s + f.pct, 0);
   const unmapped: string[] = unmappedRow ? JSON.parse(unmappedRow.value) : [];
+  const diag = diagRow ? diagRow.value : null;
 
   return (
     <div className="space-y-6">
       <header>
         <h1 className="text-2xl font-extrabold">Settings</h1>
-        <p className="text-sm text-crust/60">Flavors &amp; percentages, dough &amp; starter, schmears, hours, and Square — all adjustable.</p>
+        <p className="text-sm text-crust/60">Flavors &amp; percentages, dough &amp; starter, schmears, and hours — all adjustable.</p>
       </header>
 
       <section className="card">
@@ -50,7 +52,7 @@ export default async function SettingsPage() {
 
       <section className="card">
         <h2 className="mb-2 font-bold">Schmears</h2>
-        <p className="mb-2 text-xs text-crust/50">Serving size and the weekly split across all types (base recipes are applied automatically).</p>
+        <p className="mb-2 text-xs text-crust/50">Serving size and the weekly split across the 4 types (base recipes are applied automatically).</p>
         <SchmearEditor initial={config.schmear} />
       </section>
 
@@ -75,6 +77,7 @@ export default async function SettingsPage() {
           flavors={flavors.map((f) => ({ id: f.id, name: f.name }))}
           schmears={config.schmear.types.map((t) => ({ key: t.key, name: t.name }))}
           initialUnmapped={unmapped}
+          diag={diag}
         />
       </section>
 

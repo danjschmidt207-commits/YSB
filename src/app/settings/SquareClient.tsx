@@ -15,12 +15,14 @@ export function SquareSection({
   flavors,
   schmears,
   initialUnmapped,
+  diag,
 }: {
   configured: boolean;
   env: string;
   flavors: { id: number; name: string }[];
   schmears: { key: string; name: string }[];
   initialUnmapped: string[];
+  diag: string | null;
 }) {
   const [from, setFrom] = useState(isoDaysAgo(56));
   const [to, setTo] = useState(isoDaysAgo(0));
@@ -91,6 +93,15 @@ export function SquareSection({
         Reads the flavor/schmear from each line&apos;s modifiers. Map all your past rotator flavors to <strong>Rotator</strong>,
         weekly rotating schmears to <strong>Rotator Schmear</strong>, and ignore unrelated options (coffee, etc.). Re-import after mapping.
       </p>
+
+      {diag && (
+        <details className="rounded-xl border border-crust/15 bg-crust/[0.03] p-3 text-xs">
+          <summary className="cursor-pointer font-medium text-crust/70">Import diagnostics (how Square structured the data)</summary>
+          <pre className="mt-2 max-h-80 overflow-auto whitespace-pre-wrap break-words font-mono text-[11px] text-crust/70">
+{JSON.stringify(JSON.parse(diag), null, 2)}
+          </pre>
+        </details>
+      )}
     </div>
   );
 }
