@@ -1,6 +1,16 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { splitBagels, doughForBagels, starterForBagels, weeklySchmear, weeklyDemandGrams, unitGrams } from "./calc.ts";
+import {
+  splitBagels,
+  doughForBagels,
+  starterForBagels,
+  weeklySchmear,
+  weeklyDemandGrams,
+  unitGrams,
+  boardsForBagels,
+  formatBoards,
+  creamCheeseBlocks,
+} from "./calc.ts";
 import { DEFAULT_DOUGH, DEFAULT_STARTER, DEFAULT_SCHMEAR, LB } from "./config.ts";
 
 const FLAVORS = [
@@ -51,17 +61,44 @@ test("starter build = needed + buffer, split by feed ratio summing to build", ()
 test("weekly schmear: cream cheese scales with bagels and serving size", () => {
   const r = weeklySchmear(1000, DEFAULT_SCHMEAR);
   assert.ok(Math.abs(r.totalSchmearOz - 1500) < 1e-9); // 1000 * 1.5oz
-  // Plain is ~100% cream cheese, others mostly cream cheese -> total CC is a large share of total weight.
   assert.ok(r.creamCheeseTotalG > 0);
-  // Doubling bagels doubles cream cheese.
+  // Totals are whole 3-lb blocks (cream cheese is bought as blocks).
+  assert.equal(Number.isInteger(r.creamCheeseTotalBlocks), true);
+  assert.equal(Math.round(r.creamCheeseTotalG / LB), r.creamCheeseTotalBlocks * 3);
+  // Doubling bagels ~doubles cream cheese (within block rounding, which is tiny at this volume).
   const r2 = weeklySchmear(2000, DEFAULT_SCHMEAR);
-  assert.ok(Math.abs(r2.creamCheeseTotalG - 2 * r.creamCheeseTotalG) < 1e-3);
+  assert.ok(r2.creamCheeseTotalG >= 1.95 * r.creamCheeseTotalG && r2.creamCheeseTotalG <= 2.05 * r.creamCheeseTotalG);
 });
 
-test("plain schmear (cream cheese only) is 100% cream cheese", () => {
+test("plain schmear cream cheese is rounded to the nearest 3-lb block", () => {
   const r = weeklySchmear(1000, DEFAULT_SCHMEAR);
   const plain = r.types.find((t) => t.key === "plain")!;
-  assert.ok(Math.abs(plain.creamCheeseG - plain.schmearOz * 28.349523) < 1e-3);
+  const exactBlocks = Math.round((plain.schmearOz * 28.349523) / (3 * LB));
+  assert.equal(plain.creamCheeseBlocks, exactBlocks);
+  assert.equal(Math.round(plain.creamCheeseG / LB), exactBlocks * 3);
+});
+
+test("boardsForBagels rounds to the nearest half board (24/board)", () => {
+  assert.equal(boardsForBagels(108), 4.5);
+  assert.equal(boardsForBagels(60), 2.5);
+  assert.equal(boardsForBagels(36), 1.5);
+  assert.equal(boardsForBagels(24), 1);
+  assert.equal(boardsForBagels(30), 1.5); // 1.25 -> 1.5
+  assert.equal(boardsForBagels(0), 0);
+});
+
+test("formatBoards renders halves as ½", () => {
+  assert.equal(formatBoards(4.5), "4½");
+  assert.equal(formatBoards(2), "2");
+  assert.equal(formatBoards(0.5), "½");
+  assert.equal(formatBoards(0), "0");
+});
+
+test("creamCheeseBlocks rounds grams to whole 3-lb blocks", () => {
+  assert.equal(creamCheeseBlocks(9 * LB).blocks, 3);
+  assert.equal(creamCheeseBlocks(10 * LB).blocks, 3); // nearest
+  assert.equal(creamCheeseBlocks(11 * LB).blocks, 4); // nearest
+  assert.equal(Math.round(creamCheeseBlocks(11 * LB).grams / LB), 12);
 });
 
 test("weeklyDemandGrams aggregates dough + schmear by name, with salt from both", () => {

@@ -122,9 +122,10 @@ function DayCard({ day, flavors, locked }: { day: DayDto; flavors: FlavorPct[]; 
   const [total, setTotal] = useState(day.plannedTotal);
   const [wholesale, setWholesale] = useState(day.wholesaleExtra);
   const [pending, start] = useTransition();
-  const split = splitBagels(total, flavors);
-  const delta = total - day.recommendedTotal;
   const bakeTotal = total + wholesale;
+  // Retail + wholesale are baked together, so the flavor split covers the full bake.
+  const split = splitBagels(bakeTotal, flavors);
+  const delta = total - day.recommendedTotal;
 
   return (
     <div className="card space-y-2">
@@ -171,7 +172,9 @@ function DayCard({ day, flavors, locked }: { day: DayDto; flavors: FlavorPct[]; 
       </div>
 
       <div className="border-t border-crust/10 pt-1 text-sm">
-        <div className="mb-0.5 text-xs font-medium text-crust/45">Retail flavor split</div>
+        <div className="mb-0.5 text-xs font-medium text-crust/45">
+          Flavor split{wholesale > 0 ? ` (${bakeTotal} incl. wholesale)` : ""}
+        </div>
         {split.map((s) => (
           <div key={s.flavorId} className="flex justify-between text-crust/70">
             <span>{s.name}</span>

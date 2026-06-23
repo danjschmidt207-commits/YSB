@@ -76,6 +76,30 @@ export function starterForBagels(bagels: number, d: DoughRecipe, s: StarterConfi
 
 // ---- weekly schmear ----
 
+/** Cream cheese is bought in whole 3-lb blocks; bagels proof/boil on boards of 24. */
+export const CREAM_CHEESE_BLOCK_LB = 3;
+export const BOARD_BAGELS = 24;
+
+/** Round grams of cream cheese to whole 3-lb blocks. Returns the block count and rounded grams. */
+export function creamCheeseBlocks(grams: number, blockLb = CREAM_CHEESE_BLOCK_LB): { blocks: number; grams: number } {
+  const blockG = blockLb * LB;
+  const blocks = Math.round(grams / blockG);
+  return { blocks, grams: blocks * blockG };
+}
+
+/** Boards for a flavor's bagels, rounded to the nearest HALF board (boiled a board at a time). */
+export function boardsForBagels(bagels: number, boardSize = BOARD_BAGELS): number {
+  return Math.round((bagels / boardSize) * 2) / 2;
+}
+
+/** Format a half-board count nicely: 4.5 -> "4½", 3 -> "3", 0.5 -> "½", 0 -> "0". */
+export function formatBoards(n: number): string {
+  const whole = Math.floor(n);
+  const hasHalf = n - whole >= 0.5;
+  if (!hasHalf) return String(whole);
+  return whole === 0 ? "½" : `${whole}½`;
+}
+
 export interface SchmearTypeResult {
   key: string;
   name: string;
@@ -84,12 +108,14 @@ export interface SchmearTypeResult {
   scale: number; // multiple of the base recipe
   components: { name: string; grams: number }[];
   creamCheeseG: number;
+  creamCheeseBlocks: number; // whole 3-lb blocks
 }
 export interface SchmearResult {
   weeklyBagels: number;
   totalSchmearOz: number;
   creamCheeseTotalG: number;
   creamCheeseTotalLb: number;
+  creamCheeseTotalBlocks: number;
   types: SchmearTypeResult[];
 }
 
@@ -103,19 +129,27 @@ export function weeklySchmear(weeklyBagels: number, cfg: SchmearConfig): Schmear
     const neededG = schmearOz * OZ;
     const baseYieldG = t.components.reduce((s, c) => s + c.grams, 0) || 1;
     const scale = neededG / baseYieldG;
-    const components = t.components.map((c) => ({ name: c.name, grams: c.grams * scale }));
+    // Cream cheese rounds to whole 3-lb blocks (bought as blocks); other components scale exactly.
+    const components = t.components.map((c) =>
+      /cream cheese/i.test(c.name)
+        ? { name: c.name, grams: creamCheeseBlocks(c.grams * scale).grams }
+        : { name: c.name, grams: c.grams * scale }
+    );
     const creamCheeseG = components
       .filter((c) => /cream cheese/i.test(c.name))
       .reduce((s, c) => s + c.grams, 0);
-    return { key: t.key, name: t.name, pct: t.pct, schmearOz, scale, components, creamCheeseG };
+    const blocks = Math.round(creamCheeseG / (CREAM_CHEESE_BLOCK_LB * LB));
+    return { key: t.key, name: t.name, pct: t.pct, schmearOz, scale, components, creamCheeseG, creamCheeseBlocks: blocks };
   });
 
   const creamCheeseTotalG = types.reduce((s, t) => s + t.creamCheeseG, 0);
+  const creamCheeseTotalBlocks = types.reduce((s, t) => s + t.creamCheeseBlocks, 0);
   return {
     weeklyBagels,
     totalSchmearOz,
     creamCheeseTotalG,
     creamCheeseTotalLb: creamCheeseTotalG / LB,
+    creamCheeseTotalBlocks,
     types,
   };
 }
