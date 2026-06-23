@@ -1,8 +1,8 @@
 import Link from "next/link";
 import { prisma } from "@/lib/db";
-import { getActiveFlavors } from "@/lib/queries";
+import { getActiveFlavors, loadSquareDayAggregates } from "@/lib/queries";
 import { getConfig } from "@/lib/serverConfig";
-import { DOW_NAMES, OPEN_DOWS, isoDate } from "@/lib/dates";
+import { DOW_NAMES, DOW_SHORT, OPEN_DOWS, isoDate } from "@/lib/dates";
 import { ApplyMixButton } from "./InsightsClient";
 
 export const dynamic = "force-dynamic";
@@ -30,6 +30,7 @@ export default async function InsightsPage() {
     prisma.squareSale.aggregate({ _min: { date: true }, _max: { date: true } }),
     prisma.appSetting.findUnique({ where: { key: "square_unmapped" } }),
   ]);
+  const dayAggs = (await loadSquareDayAggregates()).sort((a, b) => (a.date < b.date ? 1 : -1));
 
   const flavorName = new Map(flavors.map((f) => [f.id, f.name]));
   const flavorPct = new Map(flavors.map((f) => [f.id, f.pct]));
@@ -123,6 +124,44 @@ export default async function InsightsPage() {
           </table>
         </section>
       )}
+
+      {/* Per-day sales with sold-out flag */}
+      <section className="card space-y-2">
+        <div className="flex items-center justify-between">
+          <h2 className="font-bold">By day</h2>
+          <span className="text-xs text-crust/50">{dayAggs.filter((d) => d.soldOut).length} of {dayAggs.length} days sold out</span>
+        </div>
+        <p className="text-xs text-crust/50">
+          Bagels sold each day. <span className="text-red-600">Sold out</span> days are inferred from the last sale landing
+          well before the noon close — on those days true demand was <em>higher</em> than sold (the Plan forecaster de-censors them).
+        </p>
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[28rem] text-sm">
+            <thead className="text-crust/50">
+              <tr>
+                <th className="th">Day</th>
+                <th className="th text-right">Sold</th>
+                <th className="th text-center">Sold out</th>
+                <th className="th text-right">Last sale</th>
+              </tr>
+            </thead>
+            <tbody>
+              {dayAggs.map((d) => (
+                <tr key={d.date} className={`border-t border-crust/5 ${d.soldOut ? "bg-red-50/40" : ""}`}>
+                  <td className="td font-semibold">
+                    {DOW_SHORT[d.dow]} <span className="text-crust/50">{d.date.slice(5)}</span>
+                  </td>
+                  <td className="td text-right tabular-nums">{d.sold.toLocaleString()}</td>
+                  <td className="td text-center">
+                    {d.soldOut ? <span className="pill bg-red-100 text-red-700">sold out</span> : <span className="text-crust/30">—</span>}
+                  </td>
+                  <td className="td text-right text-crust/50">{d.lastSale ?? "—"}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </section>
 
       {/* Suggested bake per weekday */}
       <section className="card space-y-2">

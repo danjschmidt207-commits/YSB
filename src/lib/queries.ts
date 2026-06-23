@@ -22,6 +22,8 @@ export async function getBakeRecord(date: Date) {
 export interface SquareDayAgg extends DayRecordInput {
   dow: number;
   source: "square";
+  /** Local wall-clock time (HH:MM) of the day's last sale, or null if none. */
+  lastSale: string | null;
 }
 
 /** Aggregate all imported Square sales into per-day records with inferred sell-out. */
@@ -65,6 +67,7 @@ export async function loadSquareDayAggregates(): Promise<SquareDayAgg[]> {
       date: dateIso,
       dow: g.dayOfWeek,
       source: "square" as const,
+      lastSale,
       baked: sold,
       sold,
       soldOut,
